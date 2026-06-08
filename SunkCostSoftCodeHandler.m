@@ -4,34 +4,102 @@ global SoundParams
 
 switch softcode
 
+%% ---------------- OFFER TONE ----------------
 case 1
+    % stop any previous dynamics
+    SoundParams.Accepting = false;
+    SoundParams.CurrentHz = SoundParams.Hz.Max;
+
+    if isfield(SoundParams,'ToneTimer') && ~isempty(SoundParams.ToneTimer)
+        try
+            stop(SoundParams.ToneTimer);
+            delete(SoundParams.ToneTimer);
+        end
+    end
+
     % start offer tone
     hz = SoundParams.Hz.Max;
     SoundParams.CurrentHz = hz;
 
-    sound = GenerateSineWave(192000, hz, 0.5);
-    PsychToolboxSoundServer('Load',1,sound);
+    tone = GenerateSineWave(192000, hz, 0.5);
+    PsychToolboxSoundServer('Load',1,tone);
     PsychToolboxSoundServer('Play',1);
 
+%% ---------------- START DECAY PROCESS ----------------
 case 2
-    % ONE STEP DECREASE (key change!)
-    SoundParams.CurrentHz = SoundParams.CurrentHz - SoundParams.StepSize;
+    SoundParams.Accepting = true;
+    SoundParams.CurrentHz = SoundParams.Hz.Max;
 
-    if SoundParams.CurrentHz <= SoundParams.ThresholdHz
-        SoundParams.CurrentHz = SoundParams.ThresholdHz;
+    if isfield(SoundParams,'ToneTimer') && ~isempty(SoundParams.ToneTimer)
+        try
+            stop(SoundParams.ToneTimer);
+            delete(SoundParams.ToneTimer);
+        end
     end
 
-    sound = GenerateSineWave(192000, SoundParams.CurrentHz, 0.1);
-    PsychToolboxSoundServer('Load',1,sound);
-    PsychToolboxSoundServer('Play',1);
+    % create decay timer
+    t = timer;
+    t.Period = 0.05;
+    t.ExecutionMode = 'fixedRate';
+    t.TimerFcn = @decreaseStep;
 
+    SoundParams.ToneTimer = t;
+    start(t);
+
+%% ---------------- STOP EVERYTHING ----------------
 case 3
+    SoundParams.Accepting = false;
+
     PsychToolboxSoundServer('Stop',1);
 
+    if isfield(SoundParams,'ToneTimer') && ~isempty(SoundParams.ToneTimer)
+        try
+            stop(SoundParams.ToneTimer);
+            delete(SoundParams.ToneTimer);
+        end
+    end
+    SoundParams.ToneTimer = [];
+
+%% ---------------- REWARD ----------------
 case 4
-    r = GenerateSineWave(192000,4000,0.2);
-    PsychToolboxSoundServer('Load',2,r);
+    rewardTone = GenerateSineWave(192000, 4000, 0.2);
+    PsychToolboxSoundServer('Load',2,rewardTone);
     PsychToolboxSoundServer('Play',2);
-    
+
 end
+end
+
+
+% Decay function
+
+function decreaseStep(~,~)
+
+global SoundParams
+
+% safety stop
+if ~isfield(SoundParams,'Accepting') || ~SoundParams.Accepting
+    return
+end
+
+% update frequency
+SoundParams.CurrentHz = SoundParams.CurrentHz - SoundParams.DecreaseRate;
+
+if SoundParams.CurrentHz <= SoundParams.ThresholdHz
+    SoundParams.CurrentHz = SoundParams.ThresholdHz;
+
+    if isfield(SoundParams,'ToneTimer') && ~isempty(SoundParams.ToneTimer)
+        try
+            stop(SoundParams.ToneTimer);
+            delete(SoundParams.ToneTimer);
+        end
+    end
+    SoundParams.ToneTimer = [];
+    return
+end
+
+% play updated tone chunk
+tone = GenerateSineWave(192000, SoundParams.CurrentHz, 0.1);
+PsychToolboxSoundServer('Load',1,tone);
+PsychToolboxSoundServer('Play',1);
+
 end
