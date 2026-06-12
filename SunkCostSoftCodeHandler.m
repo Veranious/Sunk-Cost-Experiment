@@ -1,105 +1,90 @@
 function SunkCostSoftCodeHandler(softcode)
-
 global SoundParams
 
 switch softcode
 
-%% ---------------- OFFER TONE ----------------
+%%OFFER TONE
 case 1
-    % stop any previous dynamics
+    % Stop any previous decay timer
+    stopDecayTimer();
     SoundParams.Accepting = false;
+    
+    %Play offer tone
     SoundParams.CurrentHz = SoundParams.Hz.Max;
+    tone = GenerateSineWave(192000, SoundParams.CurrentHz, 0.5);
+    PsychToolboxSoundServer('Load', 1, tone);
+    PsychToolboxSoundServer('Play', 1);
 
-    if isfield(SoundParams,'ToneTimer') && ~isempty(SoundParams.ToneTimer)
-        try
-            stop(SoundParams.ToneTimer);
-            delete(SoundParams.ToneTimer);
-        end
-    end
-
-    % start offer tone
-    hz = SoundParams.Hz.Max;
-    SoundParams.CurrentHz = hz;
-
-    tone = GenerateSineWave(192000, hz, 0.5);
-    PsychToolboxSoundServer('Load',1,tone);
-    PsychToolboxSoundServer('Play',1);
-
-%% ---------------- START DECAY PROCESS ----------------
+%%START DECAY PROCESS
 case 2
     SoundParams.Accepting = true;
     SoundParams.CurrentHz = SoundParams.Hz.Max;
 
-    if isfield(SoundParams,'ToneTimer') && ~isempty(SoundParams.ToneTimer)
-        try
-            stop(SoundParams.ToneTimer);
-            delete(SoundParams.ToneTimer);
-        end
-    end
+    totalSteps = SoundParams.CurrentOffer / 0.05; %number of Hz intervals per 50mseconds
+    SoundParams.DecreaseRate = (SoundParams.Hz.Max - SoundParams.ThresholdHz) / totalSteps; 
+    % tone reaches ThresholdHz exactly when offer timer expires
 
-    % create decay timer
+    % Start decay timer
+    stopDecayTimer();  % clear any leftover
     t = timer;
-    t.Period = 0.05;
+    t.Period        = 0.05;
     t.ExecutionMode = 'fixedRate';
-    t.TimerFcn = @decreaseStep;
-
+    t.TimerFcn      = @decreaseStep;
     SoundParams.ToneTimer = t;
     start(t);
 
-%% ---------------- STOP EVERYTHING ----------------
+%%STOP EVERYTHING
 case 3
     SoundParams.Accepting = false;
+    stopDecayTimer();
+    PsychToolboxSoundServer('Stop', 1);  %stop offer/decay tone
+    PsychToolboxSoundServer('Stop', 2);  %stop reward tone if still playing
 
-    PsychToolboxSoundServer('Stop',1);
-
-    if isfield(SoundParams,'ToneTimer') && ~isempty(SoundParams.ToneTimer)
-        try
-            stop(SoundParams.ToneTimer);
-            delete(SoundParams.ToneTimer);
-        end
-    end
-    SoundParams.ToneTimer = [];
-
-%% ---------------- REWARD ----------------
+%%REWARD
 case 4
+    SoundParams.Accepting = false;
+    stopDecayTimer();
     rewardTone = GenerateSineWave(192000, 4000, 0.2);
-    PsychToolboxSoundServer('Load',2,rewardTone);
-    PsychToolboxSoundServer('Play',2);
+    PsychToolboxSoundServer('Load', 2, rewardTone);
+    PsychToolboxSoundServer('Play', 2);
 
 end
 end
 
 
-% Decay function
-
-function decreaseStep(~,~)
-
+%%DECAY STEP — called every 50ms by the timer
+function decreaseStep(~, ~)
 global SoundParams
 
-% safety stop
-if ~isfield(SoundParams,'Accepting') || ~SoundParams.Accepting
+if ~SoundParams.Accepting
     return
 end
 
-% update frequency
 SoundParams.CurrentHz = SoundParams.CurrentHz - SoundParams.DecreaseRate;
 
 if SoundParams.CurrentHz <= SoundParams.ThresholdHz
     SoundParams.CurrentHz = SoundParams.ThresholdHz;
-
-    if isfield(SoundParams,'ToneTimer') && ~isempty(SoundParams.ToneTimer)
-        try
-            stop(SoundParams.ToneTimer);
-            delete(SoundParams.ToneTimer);
-        end
-    end
-    SoundParams.ToneTimer = [];
+    SoundParams.Accepting = false;
+    % Note: do NOT delete the timer from inside its own callback
+    % The run file's state machine handles what happens next via Tup
     return
 end
 
-% play updated tone chunk
+%Load and play updated tone
 tone = GenerateSineWave(192000, SoundParams.CurrentHz, 0.1);
-PsychToolboxSoundServer('Load',1,tone);
-PsychToolboxSoundServer('Play',1);
+PsychToolboxSoundServer('Load', 1, tone);
+PsychToolboxSoundServer('Play', 1);
+end
 
+%%safely stop and delete timer from outside its callback
+function stopDecayTimer()
+global SoundParams
+
+if isfield(SoundParams, 'ToneTimer') && ~isempty(SoundParams.ToneTimer)
+    if isvalid(SoundParams.ToneTimer)
+        stop(SoundParams.ToneTimer);
+        delete(SoundParams.ToneTimer);
+    end
+    SoundParams.ToneTimer = [];
+end
 end
