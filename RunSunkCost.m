@@ -3,12 +3,14 @@ function RunSunkCost
 global BpodSystem SoundParams %%parameters for both run file & handler
 
 % SOFT CODE MAP (all FSM -> handler, sound only):
-%   1 = static offer tone, announces the ORIGINAL offer   (PlayOfferTone)
-%   2 = start decay tone over CurrentOffer                (AcceptOffer)
-%   3 = stop all sound                                    (RejectOffer, RejectOfferWait)
-%   4 = stop decay, play reward tone                      (RewardDelivery)
-%   5 = start decay tone over ReviseOffer                 (DecreaseNew)
-%   6 = static NEW-offer tone, announces the REVISED offer (NewOfferTone)
+%   1 = offer tone O      - announces the ORIGINAL offer    (PlayOfferTone)
+%   2 = offer tone R      - announces the REVISED offer     (NewOfferTone)
+%   3 = decay sweep over CurrentOffer                       (AcceptOffer)
+%   4 = decay sweep over ReviseOffer                        (DecreaseNew)
+%   5 = stop decay, play reward tone                        (RewardDelivery)
+%   6 = STOP all sound + play reject/abort tone             (RejectOffer, RejectOfferWait)
+%   7 = STOP all sound, silent reset (safety net)           (ITI)
+%   8 = trial-start tone  - announces a new trial           (OfferAvailable)
 %
 % GLOBAL TIMERS (run independently of states, survive grace periods):
 %   GT1 = waitDuration (reviseTime on revise trials, offerTime otherwise)
