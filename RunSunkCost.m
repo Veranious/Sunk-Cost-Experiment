@@ -6,7 +6,7 @@ global BpodSystem SoundParams %%parameters for both run file & handler
 %   1 = offer tone O      - announces the ORIGINAL offer    (PlayOfferTone)
 %   2 = offer tone R      - announces the REVISED offer     (NewOfferTone)
 %   3 = decay sweep over CurrentOffer                       (AcceptOffer)
-%   4 = decay sweep over ReviseOffer                        (DecreaseNew)
+%   4 = decay sweep over NewOffer                        (DecreaseNew)
 %   5 = stop decay, play reward tone                        (RewardDelivery)
 %   6 = STOP all sound + play reject/abort tone             (RejectOffer, RejectOfferWait)
 %   7 = STOP all sound, silent reset (safety net)           (ITI)
@@ -14,16 +14,22 @@ global BpodSystem SoundParams %%parameters for both run file & handler
 %
 % GLOBAL TIMERS (run independently of states, survive grace periods):
 %   GT1 = waitDuration (reviseTime on revise trials, offerTime otherwise)
-%   GT2 = reviseOffer  (revised countdown)
+%   GT2 = NewOffer  (revised countdown)
 
 %% Parameters (editable GUI)
 S = BpodSystem.ProtocolSettings; % load settings chosen in launch manager
 if isempty(fieldnames(S))
     S.GUI.RewardAmount = 3;      % ul, converted to valve time via calibration
-    S.GUI.OfferMin     = 2;      % s
+    S.GUI.OfferShapeK  = 1;      % Distribution of Offer times (k = 1 uniform | k < 1 U-shaped (mass at extremes) | k > 1 bell (mass in middle))
+    S.GUI.NOfferShapeK = 1;      % Distribution of New Offer times (k = 1 uniform | k < 1 U-shaped (mass at extremes) | k > 1 bell (mass in middle))
+    S.GUI.ROfferShapeK = 1;      % Distribution of Revised Offer time (k = 1 uniform | k < 1 U-shaped (mass at extremes) | k > 1 bell (mass in middle))
+    S.GUI.OfferMin     = 2;      % s, make sure that this is > ReviseTimeMin, or we get small probabilities for doRevise (see doRevise && hi > S.GUI.ReviseTimeMin section)
     S.GUI.OfferMax     = 20;     % s
+    S.GUI.ReviseTimeMin = 0.5;   % s, minimum time needed elapsed before the revised offer, 0.5 since it cannot be 0, must be > 0.1
+    S.GUI.ReviseTimeMax = 20;    % s, max time elapsed before the revised offer, identical to OfferMax unless changed (this exists for additional leverage)
+    S.GUI.NewOfferMin  = 2;      % s
+    S.GUI.NewOfferMax  = 20;     % s
     S.GUI.ReviseProb   = 0.5;    % probability a trial gets a revise offer (yes/no)
-    S.GUI.ReviseTimeMin = 0.5;   % minimum time needed elapsed before a revised offer
     S.GUI.HzMax        = 8000;   % tone starts here
     S.GUI.HzMin        = 1000;   % (kept for reference)
     S.GUI.ThresholdHz  = 1000;   % tone decays to here as offer expires
@@ -37,7 +43,7 @@ BpodSystem.SoftCodeHandlerFunction = 'SunkCostSoftCodeHandler';
 
 %%logs for data
 BpodSystem.Data.OfferTime   = []; % original offer O (s)
-BpodSystem.Data.ReviseOffer = []; % revised offer R (s), independent of O
+BpodSystem.Data.NewOffer = []; % revised offer R (s), independent of O
 BpodSystem.Data.ReviseTime  = []; % wait elapsed when revise fires = sunk cost S (NaN if none)
 BpodSystem.Data.DoRevise    = []; % 1 = revise trial, 0 = normal trial
 
@@ -51,18 +57,19 @@ for trialNum = 1:MaxTrials
     RewardValveTime = vt(1);
 
     %% Draw this trial's schedule up front
-    offerTime   = rand * (S.GUI.OfferMax - S.GUI.OfferMin) + S.GUI.OfferMin; %%original offer O, 2-20 s
-    reviseOffer = rand * (S.GUI.OfferMax - S.GUI.OfferMin) + S.GUI.OfferMin; %%revised offer R, INDEPENDENT of O
-    doRevise    = rand < S.GUI.ReviseProb;                                   %%logical: true or false
+    offerTime   = shapedRand(S.GUI.OfferShapeK) * (S.GUI.OfferMax - S.GUI.OfferMin) + S.GUI.OfferMin; %%original offer O, 2-20 s
+    NewOffer = shapedRand(S.GUI.NOfferShapeK) * (S.GUI.NewOfferMax - S.GUI.NewOfferMin) + S.GUI.NewOfferMin; %%revised new offer R, INDEPENDENT of O
+    doRevise    = rand < S.GUI.ReviseProb; %%logical: true or false
+    hi = min(S.GUI.ReviseTimeMax, offerTime);   % guard so it never past the actual offer
 
     %% Trial-type branch: sets the first countdown's length and where it leads
-    if doRevise
-        reviseTime = S.GUI.ReviseTimeMin + rand * (offerTime - S.GUI.ReviseTimeMin);  %%sunk cost S at the moment the offer changes
-        waitDuration = reviseTime;          %%countdown is cut short at the revise
+    if doRevise && hi > S.GUI.ReviseTimeMin %%safe guard against Gui parameters set as OfferMin < ReviseTimeMin
+        reviseTime   = S.GUI.ReviseTimeMin + shapedRand(S.GUI.ROfferShapeK) * (hi - S.GUI.ReviseTimeMin);
+        waitDuration = reviseTime;
         waitEndDest  = 'NewOfferTone';
     else
-        reviseTime   = NaN;                 %%no revise on this trial
-        waitDuration = offerTime;           %%full countdown
+        reviseTime   = NaN;
+        waitDuration = offerTime;
         waitEndDest  = 'RewardDelivery';
     end
 
@@ -70,14 +77,14 @@ for trialNum = 1:MaxTrials
     SoundParams.Hz.Max       = S.GUI.HzMax;
     SoundParams.Hz.Min       = S.GUI.HzMin;
     SoundParams.ThresholdHz  = S.GUI.ThresholdHz;
-    SoundParams.CurrentOffer = offerTime;   %%case 2 decays over the FULL original offer
-    SoundParams.ReviseOffer  = reviseOffer; %%case 5 decays over the revised offer
+    SoundParams.CurrentOffer = offerTime;   %%case 3 decays over the FULL original offer
+    SoundParams.NewOffer     = NewOffer; %%case 4 decays over the New Offer
 
     sma = NewStateMachine;
 
     %% Global timers: countdowns that keep running across state changes
     sma = SetGlobalTimer(sma, 'TimerID', 1, 'Duration', waitDuration);
-    sma = SetGlobalTimer(sma, 'TimerID', 2, 'Duration', reviseOffer);
+    sma = SetGlobalTimer(sma, 'TimerID', 2, 'Duration', NewOffer);
 
     %% Condition 1: Port 3 is LOW (rat is currently out) - level test, not an edge
     sma = SetCondition(sma, 1, 'Port3', 0);
@@ -184,7 +191,7 @@ for trialNum = 1:MaxTrials
         BpodSystem.Data = AddTrialEvents(BpodSystem.Data, RawEvents);
         BpodSystem.Data.TrialSettings(trialNum) = S;          %%params this trial ran under
         BpodSystem.Data.OfferTime(trialNum)     = offerTime;
-        BpodSystem.Data.ReviseOffer(trialNum)   = reviseOffer;
+        BpodSystem.Data.NewOffer(trialNum)      = NewOffer;
         BpodSystem.Data.ReviseTime(trialNum)    = reviseTime; %%NaN on non-revise trials
         BpodSystem.Data.DoRevise(trialNum)      = doRevise;
         SaveBpodSessionData();  %%write to disk
@@ -197,4 +204,13 @@ for trialNum = 1:MaxTrials
         return                  % respects the stop button
     end
 end
+end
+
+function u = shapedRand(k)
+%% Shaped random number on [0,1]
+%   k = 1  -> uniform (flat)
+%   k < 1  -> mass pushed toward BOTH extremes (U-shaped, "reversed normal")
+%   k > 1  -> mass pulled toward the middle (bell-like)
+v = 2*rand - 1;                      % uniform on [-1, 1]
+u = 0.5 * (1 + sign(v) * abs(v)^k);  % reshaped, still on [0, 1]
 end
