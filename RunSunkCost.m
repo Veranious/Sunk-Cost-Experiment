@@ -87,8 +87,12 @@ for trialNum = 1:MaxTrials
     sma = NewStateMachine;
 
     %% Global timers: countdowns that keep running across state changes
+    gt2Duration = NewOffer;
+        if isnan(gt2Duration)
+            gt2Duration = 1;   %log for Global timer with NaN (1 instead of 0, guards for unoticeable graph errors)
+        end
     sma = SetGlobalTimer(sma, 'TimerID', 1, 'Duration', waitDuration);
-    sma = SetGlobalTimer(sma, 'TimerID', 2, 'Duration', NewOffer);
+    sma = SetGlobalTimer(sma, 'TimerID', 2, 'Duration', gt2Duration);
 
     %% Condition 1: Port 3 is LOW (rat is currently out) - level test, not an edge
     sma = SetCondition(sma, 1, 'Port3', 0);
@@ -131,7 +135,7 @@ for trialNum = 1:MaxTrials
         'Timer',0.1,...
         'StateChangeConditions',{'Tup','WaitingForRewardNew',...
                                  'Port3Out','GracePeriod3'},...
-        'OutputActions',{'SoftCode',4,'GlobalTimerTrig',2,'PWM3',255}); %softcode4 : decay sweep over RevisedOffer R
+        'OutputActions',{'SoftCode',4,'GlobalTimerTrig',2,'PWM3',255}); %softcode4 : decay sweep over NewOffer R
     sma = AddState(sma,'Name','WaitingForRewardNew',...
         'Timer',0,...
         'StateChangeConditions',{'GlobalTimer2_End','RewardDelivery',...
