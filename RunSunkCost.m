@@ -21,6 +21,7 @@ if isempty(fieldnames(S))
     S.GUI.OfferMin     = 2;      % s
     S.GUI.OfferMax     = 20;     % s
     S.GUI.ReviseProb   = 0.5;    % probability a trial gets a revise offer (yes/no)
+    S.GUI.ReviseTimeMin = 0.5;   % minimum time needed elapsed before a revised offer
     S.GUI.HzMax        = 8000;   % tone starts here
     S.GUI.HzMin        = 1000;   % (kept for reference)
     S.GUI.ThresholdHz  = 1000;   % tone decays to here as offer expires
@@ -54,7 +55,7 @@ for trialNum = 1:MaxTrials
 
     %% Trial-type branch: sets the first countdown's length and where it leads
     if doRevise
-        reviseTime   = rand * offerTime;    %%sunk cost S at the moment the offer changes
+        reviseTime = S.GUI.ReviseTimeMin + rand * (offerTime - S.GUI.ReviseTimeMin);  %%sunk cost S at the moment the offer changes
         waitDuration = reviseTime;          %%countdown is cut short at the revise
         waitEndDest  = 'NewOfferTone';
     else
@@ -83,7 +84,7 @@ for trialNum = 1:MaxTrials
     sma = AddState(sma,'Name','OfferAvailable',...
         'Timer',0,...
         'StateChangeConditions',{'Port2In','PlayOfferTone'},...
-        'OutputActions',{'SoftCode',0,'PWM2',255}); %%announce trial tone
+        'OutputActions',{'SoftCode',8,'PWM2',255}); %%announce trial tone
 
     %% START OFFER + SOUND
     sma = AddState(sma,'Name','PlayOfferTone',...
@@ -96,7 +97,8 @@ for trialNum = 1:MaxTrials
     sma = AddState(sma,'Name','AcceptOffer',...
         'Timer',0.1,...
         'StateChangeConditions',{'Tup','WaitingForReward',...
-                                 'Port3Out','GracePeriod1'},...
+                                 'Port3Out','GracePeriod1',...
+                                 'GlobalTimer1_End',waitEndDest},... %%safe in case the Global timer is ever set at t=0
         'OutputActions',{'SoftCode',3,'GlobalTimerTrig',1,'PWM3',255});
 
     %% WAIT: no Tup - GT1 decides when this ends, and where it goes
