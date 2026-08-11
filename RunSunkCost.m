@@ -4,9 +4,9 @@ global BpodSystem SoundParams %%parameters for both run file & handler
 
 % SOFT CODE MAP (all FSM -> handler, sound only):
 %   1 = offer tone O      - announces the ORIGINAL offer    (PlayOfferTone)
-%   2 = offer tone R      - announces the REVISED offer     (NewOfferTone)
+%   2 = offer tone R      - announces the NEW offer         (NewOfferTone)
 %   3 = decay sweep over CurrentOffer                       (AcceptOffer)
-%   4 = decay sweep over NewOffer                        (DecreaseNew)
+%   4 = decay sweep over NewOffer                           (DecreaseNew)
 %   5 = stop decay, play reward tone                        (RewardDelivery)
 %   6 = STOP all sound + play reject/abort tone             (RejectOffer, RejectOfferWait)
 %   7 = STOP all sound, silent reset (safety net)           (ITI)
@@ -20,9 +20,11 @@ global BpodSystem SoundParams %%parameters for both run file & handler
 S = BpodSystem.ProtocolSettings; % load settings chosen in launch manager
 if isempty(fieldnames(S))
     S.GUI.RewardAmount = 3;      % ul, converted to valve time via calibration
+    %Ks MUST BE > 0
     S.GUI.OfferShapeK  = 1;      % Distribution of Offer times (k = 1 uniform | k < 1 U-shaped (mass at extremes) | k > 1 bell (mass in middle))
     S.GUI.NOfferShapeK = 1;      % Distribution of New Offer times (k = 1 uniform | k < 1 U-shaped (mass at extremes) | k > 1 bell (mass in middle))
     S.GUI.ROfferShapeK = 1;      % Distribution of Revised Offer time (k = 1 uniform | k < 1 U-shaped (mass at extremes) | k > 1 bell (mass in middle))
+    %
     S.GUI.OfferMin     = 2;      % s, make sure that this is > ReviseTimeMin, or we get small probabilities for doRevise (see doRevise && hi > S.GUI.ReviseTimeMin section)
     S.GUI.OfferMax     = 20;     % s
     S.GUI.ReviseTimeMin = 0.5;   % s, minimum time needed elapsed before the revised offer, 0.5 since it cannot be 0, must be > 0.1
@@ -58,7 +60,6 @@ for trialNum = 1:MaxTrials
 
     %% Draw this trial's schedule up front
     offerTime   = shapedRand(S.GUI.OfferShapeK) * (S.GUI.OfferMax - S.GUI.OfferMin) + S.GUI.OfferMin; %%original offer O, 2-20 s
-    NewOffer = shapedRand(S.GUI.NOfferShapeK) * (S.GUI.NewOfferMax - S.GUI.NewOfferMin) + S.GUI.NewOfferMin; %%revised new offer R, INDEPENDENT of O
     doRevise    = rand < S.GUI.ReviseProb; %%logical: true or false
     hi = min(S.GUI.ReviseTimeMax, offerTime);   % guard so it never past the actual offer
 
@@ -67,10 +68,13 @@ for trialNum = 1:MaxTrials
         reviseTime   = S.GUI.ReviseTimeMin + shapedRand(S.GUI.ROfferShapeK) * (hi - S.GUI.ReviseTimeMin);
         waitDuration = reviseTime;
         waitEndDest  = 'NewOfferTone';
+        NewOffer = shapedRand(S.GUI.NOfferShapeK) * (S.GUI.NewOfferMax - S.GUI.NewOfferMin) + S.GUI.NewOfferMin; %%revised new offer R, INDEPENDENT of O
     else
+        doRevise     = false;   %guard for OfferMin < ReviseTimeMin case
         reviseTime   = NaN;
         waitDuration = offerTime;
         waitEndDest  = 'RewardDelivery';
+        NewOffer = NaN;
     end
 
     %% Hand the sound-relevant values to the softcode handler via the global
