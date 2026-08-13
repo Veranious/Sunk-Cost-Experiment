@@ -2,6 +2,7 @@
 global BpodSystem
 sf = 96000;
 
+clear H
 H = BpodHiFi(BpodSystem.ModuleUSB.HiFi1);
 H.SamplingRate = sf;
 nEnv = round(sf * 0.002);
