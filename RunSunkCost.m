@@ -80,12 +80,25 @@ for trialNum = 1:MaxTrials
     doRevise  = rand < S.GUI.ReviseProb;
     hi = min(S.GUI.ReviseTimeMax, offerTime);   % revise can never land past the actual offer
 
-    %% Trial-type branch: sets the first countdown's length and where it leads
+    %% Build & upload this trial's sounds
+    slope    = (S.GUI.HzMax - S.GUI.ThresholdHz) / S.GUI.OfferMax;   % Hz per second, e.g. 350
+    startHzO = S.GUI.ThresholdHz + slope * offerTime;
+    offerToneO = GenerateSineWave(sf, startHzO, 0.5) * 0.9;
+    sweepO     = GenerateSweep(sf, startHzO, S.GUI.ThresholdHz, offerTime) * 0.9;
+    H.load(1, offerToneO);
+    H.load(3, sweepO);
+    
+    %% Trial-type branch: sets the first countdown's length and where it leads, plus sound specific scenario
     if doRevise && hi > S.GUI.ReviseTimeMin %%guards against OfferMin < ReviseTimeMin settings
         reviseTime   = S.GUI.ReviseTimeMin + shapedRand(S.GUI.ROfferShapeK) * (hi - S.GUI.ReviseTimeMin);
         waitDuration = reviseTime;
         waitEndDest  = 'NewOfferTone';
         NewOffer     = shapedRand(S.GUI.NOfferShapeK) * (S.GUI.NewOfferMax - S.GUI.NewOfferMin) + S.GUI.NewOfferMin;
+        startHzR = S.GUI.ThresholdHz + slope * NewOffer;
+        offerToneR = GenerateSineWave(sf, startHzR, 0.5) * 0.9;
+        sweepR     = GenerateSweep(sf, startHzR, S.GUI.ThresholdHz, NewOffer) * 0.9;
+        H.load(2, offerToneR);
+        H.load(4, sweepR);
     else
         doRevise     = false;   %keep the log honest if the guard blocked it
         reviseTime   = NaN;
@@ -94,20 +107,6 @@ for trialNum = 1:MaxTrials
         NewOffer     = NaN;
     end
 
-    %% Build & upload this trial's sounds (pitch encodes duration; slope fixed across all trials)
-    slope    = (S.GUI.HzMax - S.GUI.ThresholdHz) / S.GUI.OfferMax;   % Hz per second, e.g. 350
-    startHzO = S.GUI.ThresholdHz + slope * offerTime;
-    offerToneO = GenerateSineWave(sf, startHzO, 0.5) * 0.9;
-    sweepO     = GenerateSweep(sf, startHzO, S.GUI.ThresholdHz, offerTime) * 0.9;
-    H.load(1, offerToneO);
-    H.load(3, sweepO);
-    if doRevise
-        startHzR = S.GUI.ThresholdHz + slope * NewOffer;
-        offerToneR = GenerateSineWave(sf, startHzR, 0.5) * 0.9;
-        sweepR     = GenerateSweep(sf, startHzR, S.GUI.ThresholdHz, NewOffer) * 0.9;
-        H.load(2, offerToneR);
-        H.load(4, sweepR);
-    end
     H.push;   % commit new waveforms to the playback buffers (rat is self-pacing at OfferAvailable)
 
     sma = NewStateMachine;
