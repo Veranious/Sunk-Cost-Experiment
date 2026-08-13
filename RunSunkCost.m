@@ -1,6 +1,6 @@
 function RunSunkCost
 
-global BpodSystem %%no more SoundParams - all sound lives on the HiFi module
+global BpodSystem
 
 % SOUND MAP (HiFi wave slots; play byte is slot-1):
 %   slot 1 ['P' 0] = offer tone O    - static pitch encoding ORIGINAL offer  (PlayOfferTone)
@@ -13,11 +13,11 @@ global BpodSystem %%no more SoundParams - all sound lives on the HiFi module
 %   'X'            = stop all playback, silent reset                         (ITI)
 %
 % PITCH CODE: fixed slope = (HzMax-ThresholdHz)/OfferMax. Start pitch = ThresholdHz + slope*duration.
-%   -> pitch at any moment IS the time remaining; long offers start high, short offers start low.
+%   -> pitch at any moment is the time remaining; long offers start high, short offers start low.
 %
-% GLOBAL TIMERS (run independently of states, survive grace periods):
-%   GT1 = waitDuration (reviseTime on revise trials, offerTime otherwise)
-%   GT2 = NewOffer (revised countdown)
+% GLOBAL TIMERS (run independently of states in order to survive grace periods):
+%   GT1 = waitDuration (is reviseTime on revise trials, is offerTime otherwise)
+%   GT2 = NewOffer (second new offer countdown)
 
 %% HiFi module setup
 BpodSystem.assertModule('HiFi', 1);
@@ -27,6 +27,8 @@ H.SamplingRate = sf;
 H.HeadphoneAmpEnabled = true; H.HeadphoneAmpGain = 10;  % ignored on HD module
 H.DigitalAttenuation_dB = 0;   % negative = quieter; tune at the rig
 H.SynthAmplitude = 0;          % make sure the synth is silent
+nEnv = round(sf * 0.002);      % 2 ms fade applied at every sound onset,
+H.AMenvelope = (1:nEnv)/nEnv;  % and mirrored at offset - kills speaker clicks
 
 %% Parameters (editable GUI)
 S = BpodSystem.ProtocolSettings; % load settings chosen in launch manager
@@ -44,6 +46,10 @@ if isempty(fieldnames(S))
     S.GUI.NewOfferMin  = 2;      % s
     S.GUI.NewOfferMax  = 20;     % s
     S.GUI.ReviseProb   = 0.5;    % probability a trial gets a revise offer (yes/no)
+    % TONE RANGE: 1000-8000 Hz is fully audible to a human, good for bench testing.
+    % Note : BEFORE RUNNING RATS, consider 4000/20000 instead: rats are most sensitive
+    %      : around 8-38 kHz and relatively deaf near 1 kHz, which is exactly where the
+    %      : countdown spends its final, most decision-critical seconds.
     S.GUI.HzMax        = 8000;   % pitch of the LONGEST possible offer (OfferMax)
     S.GUI.ThresholdHz  = 1000;   % pitch at reward time (sweep endpoint)
 end
@@ -51,7 +57,8 @@ BpodParameterGUI('init', S);
 
 MaxTrials = 200;
 
-%% Fixed sounds: loaded once, slots 5-7 (re-pushed with the per-trial sounds each trial)
+%% Fixed sounds (those that are the same every trial, so loaded and pushed once here.)
+%% push() only commits slots that were newly loaded, so these survive the per-trial pushes below.
 rewardTone     = GenerateSineWave(sf, 4000, 0.2) * 0.9;   % slot 5
 rejectTone     = GenerateSineWave(sf, 300, 0.15) * 0.6;   % slot 6 - brief, low, deliberately neutral
 trialStartTone = GenerateSineWave(sf, 3000, 0.1) * 0.9;   % slot 7
@@ -66,16 +73,17 @@ BpodSystem.Data.NewOffer    = []; % new offer R (s), independent of O (NaN if no
 BpodSystem.Data.ReviseTime  = []; % wait elapsed when revise fires = sunk cost S (NaN if none)
 BpodSystem.Data.DoRevise    = []; % 1 = revise trial, 0 = normal trial
 
-%%The Trial
+%%The Trial specific code
 for trialNum = 1:MaxTrials
 
-    S = BpodParameterGUI('sync', S); %%pull any live GUI changes
+    S = BpodParameterGUI('sync', S); %%which pulls any live GUI changes
 
     %% Reward valve time from the liquid calibration table (port 3 = wait/reward port)
     vt = GetValveTimes(S.GUI.RewardAmount, 3);
     RewardValveTime = vt(1);
+    %% DRY BENCH TEST : see RunSunkCost_Dry
 
-    %% Draw this trial's schedule up front
+    %% Draw this trial's revision decision schedule up front
     offerTime = shapedRand(S.GUI.OfferShapeK) * (S.GUI.OfferMax - S.GUI.OfferMin) + S.GUI.OfferMin;
     doRevise  = rand < S.GUI.ReviseProb;
     hi = min(S.GUI.ReviseTimeMax, offerTime);   % revise can never land past the actual offer
@@ -87,14 +95,14 @@ for trialNum = 1:MaxTrials
     sweepO     = GenerateSweep(sf, startHzO, S.GUI.ThresholdHz, offerTime) * 0.9;
     H.load(1, offerToneO);
     H.load(3, sweepO);
-    
-    %% Trial-type branch: sets the first countdown's length and where it leads, plus sound specific scenario
+
+    %% Trial-type branch: sets the first countdown's length and where it leads, plus its sounds depends on doRevise
     if doRevise && hi > S.GUI.ReviseTimeMin %%guards against OfferMin < ReviseTimeMin settings
         reviseTime   = S.GUI.ReviseTimeMin + shapedRand(S.GUI.ROfferShapeK) * (hi - S.GUI.ReviseTimeMin);
         waitDuration = reviseTime;
         waitEndDest  = 'NewOfferTone';
         NewOffer     = shapedRand(S.GUI.NOfferShapeK) * (S.GUI.NewOfferMax - S.GUI.NewOfferMin) + S.GUI.NewOfferMin;
-        startHzR = S.GUI.ThresholdHz + slope * NewOffer;
+        startHzR   = S.GUI.ThresholdHz + slope * NewOffer;
         offerToneR = GenerateSineWave(sf, startHzR, 0.5) * 0.9;
         sweepR     = GenerateSweep(sf, startHzR, S.GUI.ThresholdHz, NewOffer) * 0.9;
         H.load(2, offerToneR);
@@ -107,19 +115,19 @@ for trialNum = 1:MaxTrials
         NewOffer     = NaN;
     end
 
-    H.push;   % commit new waveforms to the playback buffers (rat is self-pacing at OfferAvailable)
+    H.push;   % commit new waveforms to the playback buffers
 
     sma = NewStateMachine;
 
     %% Global timers: countdowns that keep running across state changes
     gt2Duration = NewOffer;
     if isnan(gt2Duration)
-        gt2Duration = 1;   % placeholder - GT2 is never triggered on non-revise trials
+        gt2Duration = 1;   % placeholder : GT2 is never triggered on non-revise trials
     end
     sma = SetGlobalTimer(sma, 'TimerID', 1, 'Duration', waitDuration);
     sma = SetGlobalTimer(sma, 'TimerID', 2, 'Duration', gt2Duration);
 
-    %% Condition 1: Port 3 is LOW (rat is currently out) - level test, not an edge
+    %% Condition 1: Port 3 is LOW (rat is currently out) - level test
     sma = SetCondition(sma, 1, 'Port3', 0);
 
     %% Offer available (light cue)
@@ -248,8 +256,8 @@ end
 
 function w = GenerateSweep(sf, f0, f1, dur)
 %% Linear frequency sweep (chirp) from f0 to f1 Hz over dur seconds
-t     = 0:1/sf:dur-1/sf;
-f     = linspace(f0, f1, numel(t));   % instantaneous frequency
-phase = 2*pi*cumsum(f)/sf;            % integrate frequency to get phase
+n     = round(dur * sf);
+f     = linspace(f0, f1, n);   % instantaneous frequency at each sample
+phase = 2*pi*cumsum(f)/sf;     % phase is the integral of frequency
 w     = sin(phase);
 end
