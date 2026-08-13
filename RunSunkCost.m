@@ -79,9 +79,15 @@ for trialNum = 1:MaxTrials
     S = BpodParameterGUI('sync', S); %%which pulls any live GUI changes
 
     %% Reward valve time from the liquid calibration table (port 3 = wait/reward port)
-    vt = GetValveTimes(S.GUI.RewardAmount, 3);
-    RewardValveTime = vt(1);
-    %% DRY BENCH TEST : see RunSunkCost_Dry
+     try
+        vt = GetValveTimes(S.GUI.RewardAmount, 3);
+        RewardValveTime = vt(1);
+    catch %% DRY BENCH TEST
+        RewardValveTime = 0.1;   % no calibration table yet - dry bench test
+        if trialNum == 1
+            warning('No liquid calibration for port 3. Using RewardValveTime = 0.1 s.');
+        end
+    end
 
     %% Draw this trial's revision decision schedule up front
     offerTime = shapedRand(S.GUI.OfferShapeK) * (S.GUI.OfferMax - S.GUI.OfferMin) + S.GUI.OfferMin;
