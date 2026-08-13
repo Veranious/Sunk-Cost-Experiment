@@ -245,9 +245,10 @@ for trialNum = 1:MaxTrials
     else
         warning('Trial %d failed', trialNum);
     end
-
+    
     HandlePauseCondition(); %respects the pause button
     if BpodSystem.Status.BeingUsed == 0
+        H.stop;             % silence any sound still playing when the user hits Stop
         return                  % respects the stop button
     end
 end
