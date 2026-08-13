@@ -20,10 +20,13 @@ global BpodSystem %%no more SoundParams - all sound lives on the HiFi module
 %   GT2 = NewOffer (revised countdown)
 
 %% HiFi module setup
-BpodSystem.assertModule('HiFi', 1);              % require HiFi, USB-paired as HiFi1
+BpodSystem.assertModule('HiFi', 1);
 H = BpodHiFi(BpodSystem.ModuleUSB.HiFi1);
-sf = 96000;                                      % sampling rate: 96k is plenty for 8 kHz tones,
-H.SamplingRate = sf;                             % and halves upload time vs 192k
+sf = 96000;
+H.SamplingRate = sf;
+H.HeadphoneAmpEnabled = true; H.HeadphoneAmpGain = 10;  % ignored on HD module
+H.DigitalAttenuation_dB = 0;   % negative = quieter; tune at the rig
+H.SynthAmplitude = 0;          % make sure the synth is silent
 
 %% Parameters (editable GUI)
 S = BpodSystem.ProtocolSettings; % load settings chosen in launch manager
