@@ -1,4 +1,4 @@
-function RunSunkCost
+function RunSunkCost_Dry
 
 global BpodSystem SoundParams %%parameters for both run file & handler
 
