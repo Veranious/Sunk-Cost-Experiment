@@ -31,3 +31,7 @@ H.load(2, GenerateSweep(sf, 2400, 1000, 4)  * 0.9);   % new 4 s offer (good news
 H.push;
 H.play(1); pause(3);   % listen to 3 s of the original descent
 H.play(2);             % revise fires
+
+
+%% use config > choose ports (1—3), calibrate with 5-50 micro liters, 25 to 200 ms > ...
+%% ... > take the water out from the port and weigh it > enter the data in grams > do the rest to calculate a function.
