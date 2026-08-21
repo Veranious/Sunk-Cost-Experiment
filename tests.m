@@ -1,4 +1,4 @@
-%% HiFi bench test - run with Bpod already started
+%%HIFI bench test - run with Bpod already started
 global BpodSystem
 sf = 96000;
 
@@ -32,6 +32,7 @@ H.push;
 H.play(1); pause(3);   % listen to 3 s of the original descent
 H.play(2);             % revise fires
 
+%% END of Hifi tests
 
 %% use config > choose ports (1—3), calibrate with 5-50 micro liters, 25 to 200 ms > ...
 %% ... > take the water out from the port and weigh it > enter the data in grams > do the rest to calculate a function.
