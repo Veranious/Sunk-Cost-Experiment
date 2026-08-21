@@ -12,8 +12,11 @@ global BpodSystem
 %   slot 7 ['P' 6] = trial-start tone                                        (OfferAvailable)
 %   'X'            = stop all playback, silent reset                         (ITI)
 %
-% PITCH CODE: fixed slope = (HzMax-ThresholdHz)/OfferMax. Start pitch = ThresholdHz + slope*duration.
-%   -> pitch at any moment is the time remaining; long offers start high, short offers start low.
+% PITCH CODE: pitch = ThresholdHz * r^(timeRemaining/PitchMax), r = HzMax/ThresholdHz,
+%             PitchMax = max(OfferMax, NewOfferMax).
+%   -> LOG-pitch is linear in time remaining: every second is a constant PERCENTAGE
+%      step (not a constant Hz step), which is what Weber's law says the ear resolves.
+%      Long offers start high, short offers start low; O and R share one scale.
 %
 % GLOBAL TIMERS (run independently of states in order to survive grace periods):
 %   GT1 = waitDuration (is reviseTime on revise trials, is offerTime otherwise)
@@ -95,8 +98,9 @@ for trialNum = 1:MaxTrials
     hi = min(S.GUI.ReviseTimeMax, offerTime);   % revise can never land past the actual offer
 
     %% Build & upload this trial's sounds
-    slope    = (S.GUI.HzMax - S.GUI.ThresholdHz) / S.GUI.OfferMax;   % Hz per second, e.g. 350
-    startHzO = S.GUI.ThresholdHz + slope * offerTime;
+    PitchMax = max(S.GUI.OfferMax, S.GUI.NewOfferMax);  % duration that maps to HzMax
+    r        = S.GUI.HzMax / S.GUI.ThresholdHz;         % total pitch ratio, e.g. 8 = 3 octaves
+    startHzO = S.GUI.ThresholdHz * r^(offerTime / PitchMax);
     offerToneO = GenerateSineWave(sf, startHzO, 0.5) * 0.9;
     sweepO     = GenerateSweep(sf, startHzO, S.GUI.ThresholdHz, offerTime) * 0.9;
     H.load(1, offerToneO);
@@ -108,7 +112,7 @@ for trialNum = 1:MaxTrials
         waitDuration = reviseTime;
         waitEndDest  = 'NewOfferTone';
         NewOffer     = shapedRand(S.GUI.NOfferShapeK) * (S.GUI.NewOfferMax - S.GUI.NewOfferMin) + S.GUI.NewOfferMin;
-        startHzR   = S.GUI.ThresholdHz + slope * NewOffer;
+        startHzR   = S.GUI.ThresholdHz * r^(NewOffer / PitchMax);
         offerToneR = GenerateSineWave(sf, startHzR, 0.5) * 0.9;
         sweepR     = GenerateSweep(sf, startHzR, S.GUI.ThresholdHz, NewOffer) * 0.9;
         H.load(2, offerToneR);
@@ -221,7 +225,7 @@ for trialNum = 1:MaxTrials
         'StateChangeConditions',{'Tup','ITI'},...
         'OutputActions',{'PWM2',255,'HiFi1',['P' 5]}); %%reject tone (slot 6) interrupts any sweep
     sma = AddState(sma,'Name','RejectOfferWait',...
-        'Timer',0,...
+        'Timer',2,...
         'StateChangeConditions',{'Tup','ITI'},...
         'OutputActions',{'PWM2',255,'HiFi1',['P' 5]}); %%reject tone
 
@@ -262,9 +266,11 @@ u = 0.5 * (1 + sign(v) * abs(v)^k);  % reshaped, still on [0, 1]
 end
 
 function w = GenerateSweep(sf, f0, f1, dur)
-%% Linear frequency sweep (chirp) from f0 to f1 Hz over dur seconds
+%% Exponential (log-linear) frequency sweep, f0 -> f1 Hz over dur seconds.
+%  Descends at a constant octaves/second, so perceived rate of change is uniform.
+%  Phase is still the integral of frequency - only the frequency curve changed.
 n     = round(dur * sf);
-f     = linspace(f0, f1, n);   % instantaneous frequency at each sample
-phase = 2*pi*cumsum(f)/sf;     % phase is the integral of frequency
+f     = f0 * (f1/f0).^linspace(0, 1, n);   % geometric steps (was: linspace, arithmetic)
+phase = 2*pi*cumsum(f)/sf;                 % numerical integration
 w     = sin(phase);
 end
