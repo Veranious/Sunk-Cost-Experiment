@@ -22,20 +22,10 @@ global BpodSystem
 %   GT1 = waitDuration (is reviseTime on revise trials, is offerTime otherwise)
 %   GT2 = NewOffer (second new offer countdown)
 
-%% HiFi module setup
-BpodSystem.assertModule('HiFi', 1);
-H = BpodHiFi(BpodSystem.ModuleUSB.HiFi1);
-sf = 96000;
-H.SamplingRate = sf;
-H.HeadphoneAmpEnabled = true; H.HeadphoneAmpGain = 10;  % ignored on HD module
-H.DigitalAttenuation_dB = 0;   % negative = quieter; tune at the rig
-H.SynthAmplitude = 0;          % make sure the synth is silent
-nEnv = round(sf * 0.002);      % 2 ms fade applied at every sound onset,
-H.AMenvelope = (1:nEnv)/nEnv;  % and mirrored at offset - kills speaker clicks
-
 %% Parameters (editable GUI)
 S = BpodSystem.ProtocolSettings; % load settings chosen in launch manager
 if isempty(fieldnames(S))
+    S.GUI.SoundAttenuation_dB = -20;  % loudness, 0 = loudest. Range: 0 to -103 (SD) / -120 (HD)
     S.GUI.RewardAmount = 3;      % ul, converted to valve time via calibration
     %Ks MUST BE > 0
     S.GUI.OfferShapeK  = 1;      % Distribution of Offer times (k = 1 uniform | k < 1 U-shaped | k > 1 bell)
@@ -57,6 +47,17 @@ if isempty(fieldnames(S))
     S.GUI.ThresholdHz  = 1000;   % pitch at reward time (sweep endpoint)
 end
 BpodParameterGUI('init', S);
+
+%% HiFi module setup
+BpodSystem.assertModule('HiFi', 1);
+H = BpodHiFi(BpodSystem.ModuleUSB.HiFi1);
+sf = 96000;
+H.SamplingRate = sf;
+H.HeadphoneAmpEnabled = true; H.HeadphoneAmpGain = 10;  % ignored on HD module
+H.DigitalAttenuation_dB = S.GUI.SoundAttenuation_dB;
+H.SynthAmplitude = 0;          % make sure the synth is silent
+nEnv = round(sf * 0.002);      % 2 ms fade applied at every sound onset,
+H.AMenvelope = (1:nEnv)/nEnv;  % and mirrored at offset - kills speaker clicks
 
 MaxTrials = 200;
 
