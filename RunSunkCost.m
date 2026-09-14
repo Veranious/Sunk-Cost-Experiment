@@ -81,6 +81,8 @@ BpodSystem.Data.DoRevise    = []; % 1 = revise trial, 0 = normal trial
 for trialNum = 1:MaxTrials
 
     S = BpodParameterGUI('sync', S); %%which pulls any live GUI changes
+    H.DigitalAttenuation_dB = S.GUI.SoundAttenuation_dB;
+    fprintf('Trial %d: attenuation = %g dB\n', trialNum, H.DigitalAttenuation_dB); %%remove this PArt after testing
 
     %% Reward valve time from the liquid calibration table (port 3 = wait/reward port)
      try
