@@ -27,10 +27,15 @@ S = BpodSystem.ProtocolSettings; % load settings chosen in launch manager
 if isempty(fieldnames(S))
     S.GUI.SoundAttenuation_dB = -20;  % loudness, 0 = loudest. Range: 0 to -103 (SD) / -120 (HD)
     S.GUI.RewardAmount = 3;      % ul, converted to valve time via calibration
-    %Ks MUST BE > 0
-    S.GUI.OfferShapeK  = 1;      % Distribution of Offer times (k = 1 uniform | k < 1 U-shaped | k > 1 bell)
-    S.GUI.NOfferShapeK = 1;      % Distribution of New Offer times (same convention)
-    S.GUI.ROfferShapeK = 1;      % Distribution of Revise times (same convention)
+    %% Offer-time distributions: Beta(alpha,beta) rescaled onto [min,max].
+    %   Mu    = mean position in the range, in (0,1). 0.5 = symmetric.
+    %           > 0.5 skews toward LONG durations, < 0.5 toward SHORT.
+    %   Kappa = concentration, > 0.  Kappa = 2 with Mu = 0.5 is EXACTLY uniform.
+    %           Kappa < 2 -> U-shaped (mass at the extremes)
+    %           Kappa > 2 -> bell (mass in the middle). Kappa = 10 is already tight.
+    S.GUI.OfferMu     = 0.5;   S.GUI.OfferKappa   = 2;   % original offer O
+    S.GUI.NOfferMu    = 0.5;   S.GUI.NOfferKappa  = 2;   % new offer R
+    S.GUI.ReviseMu    = 0.5;   S.GUI.ReviseKappa  = 2;   % revise timing S
     %
     S.GUI.OfferMin     = 2;      % s, keep > ReviseTimeMin (see guard in trial-type branch)
     S.GUI.OfferMax     = 20;     % s
@@ -96,7 +101,7 @@ for trialNum = 1:MaxTrials
     end
 
     %% Draw this trial's revision decision schedule up front
-    offerTime = shapedRand(S.GUI.OfferShapeK) * (S.GUI.OfferMax - S.GUI.OfferMin) + S.GUI.OfferMin;
+    offerTime = betaRand(S.GUI.OfferMu, S.GUI.OfferKappa) * (S.GUI.OfferMax - S.GUI.OfferMin) + S.GUI.OfferMin;
     doRevise  = rand < S.GUI.ReviseProb;
     hi = min(S.GUI.ReviseTimeMax, offerTime);   % revise can never land past the actual offer
 
@@ -111,10 +116,10 @@ for trialNum = 1:MaxTrials
 
     %% Trial-type branch: sets the first countdown's length and where it leads, plus its sounds depends on doRevise
     if doRevise && hi > S.GUI.ReviseTimeMin %%guards against OfferMin < ReviseTimeMin settings
-        reviseTime   = S.GUI.ReviseTimeMin + shapedRand(S.GUI.ROfferShapeK) * (hi - S.GUI.ReviseTimeMin);
+        reviseTime   = S.GUI.ReviseTimeMin + betaRand(S.GUI.OfferMu, S.GUI.OfferKappa) * (hi - S.GUI.ReviseTimeMin);
         waitDuration = reviseTime;
         waitEndDest  = 'NewOfferTone';
-        NewOffer     = shapedRand(S.GUI.NOfferShapeK) * (S.GUI.NewOfferMax - S.GUI.NewOfferMin) + S.GUI.NewOfferMin;
+        NewOffer     = betaRand(S.GUI.OfferMu, S.GUI.OfferKappa) * (S.GUI.NewOfferMax - S.GUI.NewOfferMin) + S.GUI.NewOfferMin;
         startHzR   = S.GUI.ThresholdHz * r^(NewOffer / PitchMax);
         offerToneR = GenerateSineWave(sf, startHzR, 0.5) * 0.9;
         sweepR     = GenerateSweep(sf, startHzR, S.GUI.ThresholdHz, NewOffer) * 0.9;
@@ -151,9 +156,10 @@ for trialNum = 1:MaxTrials
 
     %% START OFFER + SOUND
     sma = AddState(sma,'Name','PlayOfferTone',...
-        'Timer',0,...
+        'Timer',10,...
         'StateChangeConditions',{'Port1In','RejectOffer',...
-                                 'Port3In','AcceptOffer'},...
+                                 'Port3In','AcceptOffer',...
+                                 'Tup','OfferOmission'},...
         'OutputActions',{'HiFi1',['P' 0],'PWM1',255,'PWM3',255}); %%offer tone O (slot 1)
 
     %% ACCEPT: start the decay sweep AND the countdown together
@@ -222,7 +228,7 @@ for trialNum = 1:MaxTrials
                                  'Port3In','Drinking'},...
         'OutputActions',{});
 
-    %% REJECT
+    %% REJECT 
     sma = AddState(sma,'Name','RejectOffer',...
         'Timer',1,...
         'StateChangeConditions',{'Tup','ITI'},...
@@ -231,6 +237,36 @@ for trialNum = 1:MaxTrials
         'Timer',1,...
         'StateChangeConditions',{'Tup','ITI'},...
         'OutputActions',{'PWM1',255,'HiFi1',['P' 5]}); %%reject tone
+        
+    %% OMISSION with flashing light
+    sma = AddState(sma,'Name','OfferOmission',...
+        'Timer',0.1,...
+        'StateChangeConditions',{'Tup','Flash1On'},...
+        'OutputActions',{'HiFi1',['P' 5]}); %%reject tone
+    sma = AddState(sma, 'Name', 'Flash1On', ...
+        'Timer', 0.1, ...
+        'StateChangeConditions', {'Tup', 'Flash1Off'}, ...
+        'OutputActions', {'PWM2', 255});
+    sma = AddState(sma, 'Name', 'Flash1Off', ...
+        'Timer', 0.1, ...
+        'StateChangeConditions', {'Tup', 'Flash2On'}, ...
+        'OutputActions', {});
+    sma = AddState(sma, 'Name', 'Flash2On', ...
+        'Timer', 0.1, ...
+        'StateChangeConditions', {'Tup', 'Flash2Off'}, ...
+        'OutputActions', {'PWM2', 255});
+    sma = AddState(sma, 'Name', 'Flash2Off', ...
+        'Timer', 0.1, ...
+        'StateChangeConditions', {'Tup', 'Flash3On'}, ...
+        'OutputActions', {});
+    sma = AddState(sma, 'Name', 'Flash3On', ...
+        'Timer', 0.1, ...
+        'StateChangeConditions', {'Tup', 'Flash3Off'}, ...
+        'OutputActions', {'PWM2', 255});
+    sma = AddState(sma, 'Name', 'Flash3Off', ...
+        'Timer', 0.1, ...
+        'StateChangeConditions', {'Tup', 'ITI'}, ...
+        'OutputActions', {});
 
     %% ITI
     sma = AddState(sma,'Name','ITI',...
@@ -261,11 +297,38 @@ for trialNum = 1:MaxTrials
 end
 end
 
-function u = shapedRand(k)
-%% Shaped random number on [0,1]
-%   k = 1 uniform | k < 1 U-shaped (mass at extremes) | k > 1 bell (mass in middle)
-v = 2*rand - 1;                      % uniform on [-1, 1]
-u = 0.5 * (1 + sign(v) * abs(v)^k);  % reshaped, still on [0, 1]
+function u = betaRand(mu, kappa)
+%% Beta draw on (0,1), parameterised by mean and concentration.
+%  alpha = mu*kappa, beta = (1-mu)*kappa.  Sampled as the gamma ratio
+%  u = G(alpha) / (G(alpha) + G(beta)), which is the standard identity.
+mu    = min(max(mu, 1e-3), 1 - 1e-3);   % keep both shapes strictly positive
+kappa = max(kappa, 1e-3);
+a  = mu * kappa;
+b  = (1 - mu) * kappa;
+g1 = gammaRand(a);
+g2 = gammaRand(b);
+u  = g1 / (g1 + g2);
+end
+
+function g = gammaRand(a)
+%% Gamma(shape = a, scale = 1), Marsaglia & Tsang (2000).
+%  Written out in base MATLAB so the rig does not need the Statistics toolbox
+%  (betarnd/gamrnd/randg all live there).
+if a < 1
+    g = gammaRand(a + 1) * rand^(1/a);   % boost: Gamma(a) = Gamma(a+1)*U^(1/a)
+    return
+end
+d = a - 1/3;
+c = 1 / sqrt(9*d);
+while true
+    x = randn;
+    v = (1 + c*x)^3;
+    if v <= 0, continue; end
+    if log(rand) < 0.5*x^2 + d*(1 - v + log(v))
+        g = d * v;
+        return
+    end
+end
 end
 
 function w = GenerateSweep(sf, f0, f1, dur)
