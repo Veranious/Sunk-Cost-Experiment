@@ -37,6 +37,8 @@ if isempty(fieldnames(S))
     S.GUI.NOfferMu    = 0.5;   S.GUI.NOfferKappa  = 2;   % new offer R
     S.GUI.ReviseMu    = 0.5;   S.GUI.ReviseKappa  = 2;   % revise timing S
     %
+    S.GUI.ChoiceLatMax = 10;     % Max time allotted for choice
+    %
     S.GUI.OfferMin     = 2;      % s, keep > ReviseTimeMin (see guard in trial-type branch)
     S.GUI.OfferMax     = 20;     % s
     S.GUI.ReviseTimeMin = 0.5;   % s, minimum elapsed wait before a revise can fire
@@ -81,16 +83,26 @@ BpodSystem.Data.OfferTime   = []; % original offer O (s)
 BpodSystem.Data.NewOffer    = []; % new offer R (s), independent of O (NaN if none)
 BpodSystem.Data.ReviseTime  = []; % wait elapsed when revise fires = sunk cost S (NaN if none)
 BpodSystem.Data.DoRevise    = []; % 1 = revise trial, 0 = normal trial
+BpodSystem.Data.RatAccepted_Init    = []; % 1 = Rat accepted initial offer, 0 = rejected initial offer
+
+BpodSystem.SoftCodeHandlerFunction = @Flagger; % Event codes sent to 'SoftCode' can modify code via Flagger
+function Flagger(event)
+    if event == 1
+        init_accepted = true; % Set boolean if initial offer is accepted (for plotting later)
+    end
+end
 
 %%The Trial specific code
 for trialNum = 1:MaxTrials
 
+    init_accepted = false;
+
     S = BpodParameterGUI('sync', S); %%which pulls any live GUI changes
     H.DigitalAttenuation_dB = S.GUI.SoundAttenuation_dB;
-    fprintf('Trial %d: attenuation = %g dB\n', trialNum, H.DigitalAttenuation_dB); %%remove this PArt after testing
+    fprintf('Trial %d: attenuation = %g dB\n', trialNum, H.DigitalAttenuation_dB); %%remove this Part after testing
 
     %% Reward valve time from the liquid calibration table (port 3 = wait/reward port)
-     try
+    try
         vt = GetValveTimes(S.GUI.RewardAmount, 3);
         RewardValveTime = vt(1);
     catch %% DRY BENCH TEST
@@ -156,7 +168,7 @@ for trialNum = 1:MaxTrials
 
     %% START OFFER + SOUND
     sma = AddState(sma,'Name','PlayOfferTone',...
-        'Timer',10,...
+        'Timer',S.GUI.ChoiceLatMax,...
         'StateChangeConditions',{'Port1In','RejectOffer',...
                                  'Port3In','AcceptOffer',...
                                  'Tup','OfferOmission'},...
@@ -284,6 +296,7 @@ for trialNum = 1:MaxTrials
         BpodSystem.Data.NewOffer(trialNum)      = NewOffer;
         BpodSystem.Data.ReviseTime(trialNum)    = reviseTime; %%NaN on non-revise trials
         BpodSystem.Data.DoRevise(trialNum)      = doRevise;
+        BpodSystem.Data.RatAccepted_Init(trialNum)   = init_accepted;
         SaveBpodSessionData();  %%write to disk
     else
         warning('Trial %d failed', trialNum);
