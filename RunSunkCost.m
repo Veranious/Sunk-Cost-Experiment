@@ -25,7 +25,7 @@ global BpodSystem
 %% Parameters (editable GUI)
 S = BpodSystem.ProtocolSettings; % load settings chosen in launch manager
 if isempty(fieldnames(S))
-    S.GUI.SoundAttenuation_dB = -20;  % loudness, 0 = loudest. Range: 0 to -103 (SD) / -120 (HD)
+    S.GUI.SoundAttenuation_dB = 0;  % loudness, 0 = loudest. Range: 0 to -103 (SD) / -120 (HD)
     S.GUI.RewardAmount = 3;      % ul, converted to valve time via calibration
     %% Offer-time distributions: Beta(alpha,beta) rescaled onto [min,max].
     %   Mu    = mean position in the range, in (0,1). 0.5 = symmetric.
@@ -50,8 +50,9 @@ if isempty(fieldnames(S))
     % Note : BEFORE RUNNING RATS, consider 4000/20000 instead: rats are most sensitive
     %      : around 8-38 kHz and relatively deaf near 1 kHz, which is exactly where the
     %      : countdown spends its final, most decision-critical seconds.
-    S.GUI.HzMax        = 8000;   % pitch of the LONGEST possible offer (OfferMax)
-    S.GUI.ThresholdHz  = 1000;   % pitch at reward time (sweep endpoint)
+    % Note AY 9/16: Replicate Redish paper by using 750 Hz to 12kHz
+    S.GUI.HzMax        = 12000;   % pitch of the LONGEST possible offer (OfferMax)
+    S.GUI.ThresholdHz  = 750;   % pitch at reward time (sweep endpoint)
 end
 BpodParameterGUI('init', S);
 
