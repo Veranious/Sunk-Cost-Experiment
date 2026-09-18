@@ -1,0 +1,114 @@
+function w = GenerateToneCloud(sf, f0, f1, dur, nBins, kappa, fLow, fHigh)
+%% DESCENDING TONE CLOUD
+%  Builds a sound out of ~2000 short beeps ("pips"). Each pip's frequency is
+%  drawn at random from a set of bins, using a probability hump whose CENTRE
+%  slides from f0 down to f1 over the duration. Individual pips scatter, but
+%  the cloud's centre of mass descends - that's what carries time-remaining.
+%
+%  sf     : sampling rate, Hz (192000)
+%  f0     : frequency the cloud's CENTRE starts at
+%  f1     : frequency the cloud's CENTRE ends at (pass f0==f1 for a still cloud)
+%  dur    : total length, seconds
+%  nBins  : how many different frequencies a pip is allowed to be (18)
+%  kappa  : cluster tightness. high = near-pure tone, low = near-noise (20)
+%  fLow   : lowest bin frequency  (the playground the pips live in)
+%  fHigh  : highest bin frequency
+%
+%  Returns w: a 1 x nSamples row vector, amplitudes within [-1, 1],
+%  ready to hand straight to H.load().
+
+%% ---- fixed design constants -------------------------------------------
+pipDur      = 0.030;   % each pip lasts 30 ms
+pipInterval = 0.010;   % a new pip STARTS every 10 ms -> ~3 overlap at any moment
+rampDur     = 0.005;   % 5 ms fade at each end of a pip, to stop it clicking
+targetRMS   = 0.1;     % loudness every cloud gets normalised to (see bottom)
+
+%% ---- the empty canvas --------------------------------------------------
+n = round(dur * sf);                               % how many samples the whole sound needs
+w = zeros(1, n);                                   % start silent; pips get ADDED into this
+
+%% ---- the menu of allowed frequencies -----------------------------------
+freqs = logspace(log10(fLow), log10(fHigh), nBins);% nBins frequencies, spaced by equal RATIOS
+                                                   % (not equal Hz) because ears hear ratios
+
+%% ---- the fade-in/fade-out shape applied to every pip -------------------
+pipN  = round(pipDur * sf);                        % samples in one pip
+rampN = round(rampDur * sf);                       % samples in one fade
+env   = ones(1, pipN);                             % start with "full volume throughout"
+ramp  = (1 - cos(pi * (1:rampN)/rampN)) / 2;       % smooth S-curve from ~0 up to 1
+env(1:rampN)         = ramp;                       % fade IN over the first 5 ms
+env(end-rampN+1:end) = fliplr(ramp);               % fade OUT over the last 5 ms (S-curve reversed)
+
+%% ---- pre-build all the pips, once --------------------------------------
+t    = (0:pipN-1)/sf;                              % time axis for a single pip, in seconds
+pips = sin(2*pi*freqs(:)*t) .* env;                % freqs(:) is a COLUMN, t is a ROW, so
+                                                   % column x row = a matrix: one row per
+                                                   % frequency, one column per time point.
+                                                   % .* env fades every row.
+                                                   % Result: nBins x pipN. Row k = a finished
+                                                   % pip at frequency k, reusable ~2000 times.
+
+%% ---- bin positions expressed as 0-to-1 ---------------------------------
+u = ((1:nBins) - 0.5) / nBins;                     % each bin's position on a 0-1 scale.
+                                                   % The -0.5 uses bin CENTRES, which keeps
+                                                   % these values away from exactly 0 and 1
+                                                   % (the maths below blows up at 0 and 1)
+
+%% ---- convert the start/end frequencies into that same 0-to-1 scale -----
+logLow  = log(fLow);                               % work in log space to match the log bin spacing
+logSpan = log(fHigh) - logLow;                     % total width of the playground, in log units
+c0 = (log(f0) - logLow) / logSpan;                 % where the centre STARTS, as 0-1
+c1 = (log(f1) - logLow) / logSpan;                 % where the centre ENDS, as 0-1
+
+%% ---- build the cloud, one pip at a time --------------------------------
+nPips = floor((dur - pipDur) / pipInterval) + 1;   % how many pips fit in the duration
+
+for i = 1:nPips
+
+    frac = (i-1) / max(nPips-1, 1);                % how far through the sound we are: 0 -> 1.
+                                                   % max(...,1) just avoids dividing by zero
+                                                   % if there's only a single pip
+
+    mu = min(max(c0 + (c1 - c0)*frac, 1e-3), 1-1e-3);
+                                                   % THE DESCENT: centre slides c0 -> c1.
+                                                   % min/max clamp it just inside 0 and 1 so
+                                                   % the exponents below stay finite
+
+    a = mu*kappa;                                  % Beta shape parameter 1
+    b = (1-mu)*kappa;                              % Beta shape parameter 2.
+                                                   % Written this way, mu = WHERE the hump is
+                                                   % and kappa = HOW NARROW it is
+
+    wgt = u.^(a-1) .* (1-u).^(b-1);                % the Beta hump's height at each bin
+                                                   % = how likely that bin is right now
+    wgt = wgt / sum(wgt);                          % rescale so the weights sum to 1
+
+    idx = find(rand <= cumsum(wgt), 1);            % ROULETTE WHEEL: cumsum lays the bins out
+                                                   % along a 0-1 line, each owning a stretch
+                                                   % as wide as its weight. rand throws a dart.
+                                                   % find(...,1) = whose stretch it landed in.
+
+    onset = round((i-1) * pipInterval * sf) + 1;   % first sample of this pip (+1: MATLAB counts from 1)
+    last  = onset + pipN - 1;                      % last sample of this pip
+
+    if last <= n                                   % the final pips would overrun the buffer -
+        w(onset:last) = w(onset:last) + pips(idx,:);
+                                                   % ADD, don't overwrite - overlapping pips
+                                                   % sum together, and that summing is exactly
+                                                   % what makes it a "cloud" and not a beep train
+    end                                            % (if it would overrun, just skip it)
+end
+
+%% ---- set the loudness --------------------------------------------------
+r = sqrt(mean(w.^2));                              % RMS = roughly the average loudness you hear
+if r > 0                                           % (guard against an all-silent waveform)
+    w = w * (targetRMS / r);                       % scale so EVERY cloud is equally loud.
+end                                                % Matters scientifically: if loudness drifted
+                                                   % with frequency, the rat could use volume as
+                                                   % a shortcut instead of pitch
+
+pk = max(abs(w));                                  % peak = the single loudest instant
+if pk > 0.95                                       % if an unlucky pile-up would exceed the
+    w = w * (0.95 / pk);                           % +/-1 limit and distort, back off slightly.
+end                                                % Rarely triggers; pure insurance
+end
