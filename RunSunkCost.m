@@ -55,6 +55,8 @@ if isempty(fieldnames(S))
     S.GUI.ThresholdHz  = 750;   % pitch at reward time (sweep endpoint)
 end
 BpodParameterGUI('init', S);
+OutcomePlot('init');
+LiveTrialTable('init');
 
 %% HiFi module setup
 BpodSystem.assertModule('HiFi', 1);
@@ -84,19 +86,12 @@ BpodSystem.Data.OfferTime   = []; % original offer O (s)
 BpodSystem.Data.NewOffer    = []; % new offer R (s), independent of O (NaN if none)
 BpodSystem.Data.ReviseTime  = []; % wait elapsed when revise fires = sunk cost S (NaN if none)
 BpodSystem.Data.DoRevise    = []; % 1 = revise trial, 0 = normal trial
-BpodSystem.Data.RatAccepted_Init    = []; % 1 = Rat accepted initial offer, 0 = rejected initial offer
-
-BpodSystem.SoftCodeHandlerFunction = @Flagger; % Event codes sent to 'SoftCode' can modify code via Flagger
-function Flagger(event)
-    if event == 1
-        init_accepted = true; % Set boolean if initial offer is accepted (for plotting later)
-    end
-end
 
 %%The Trial specific code
 for trialNum = 1:MaxTrials
 
-    init_accepted = false;
+    accepted = 1;
+    rewarded = 0;
 
     S = BpodParameterGUI('sync', S); %%which pulls any live GUI changes
     H.DigitalAttenuation_dB = S.GUI.SoundAttenuation_dB;
@@ -147,6 +142,11 @@ for trialNum = 1:MaxTrials
     end
 
     H.push;   % commit new waveforms to the playback buffers
+
+    LiveTrialTable('update', ...
+                    trialNum, ...
+                    offerTime, doRevise, reviseTime, NewOffer, ...
+                    '-', '-', '-', '-', '-', '-', 0);
 
     sma = NewStateMachine;
 
@@ -253,31 +253,31 @@ for trialNum = 1:MaxTrials
         
     %% OMISSION with flashing light
     sma = AddState(sma,'Name','OfferOmission',...
-        'Timer',0.1,...
+        'Timer',0.25,...
         'StateChangeConditions',{'Tup','Flash1On'},...
         'OutputActions',{'HiFi1',['P' 5]}); %%reject tone
     sma = AddState(sma, 'Name', 'Flash1On', ...
-        'Timer', 0.1, ...
+        'Timer', 0.25, ...
         'StateChangeConditions', {'Tup', 'Flash1Off'}, ...
         'OutputActions', {'PWM1', 255,'PWM3', 255});
     sma = AddState(sma, 'Name', 'Flash1Off', ...
-        'Timer', 0.1, ...
+        'Timer', 0.25, ...
         'StateChangeConditions', {'Tup', 'Flash2On'}, ...
         'OutputActions', {});
     sma = AddState(sma, 'Name', 'Flash2On', ...
-        'Timer', 0.1, ...
+        'Timer', 0.25, ...
         'StateChangeConditions', {'Tup', 'Flash2Off'}, ...
         'OutputActions', {'PWM1', 255,'PWM3', 255});
     sma = AddState(sma, 'Name', 'Flash2Off', ...
-        'Timer', 0.1, ...
+        'Timer', 0.25, ...
         'StateChangeConditions', {'Tup', 'Flash3On'}, ...
         'OutputActions', {});
     sma = AddState(sma, 'Name', 'Flash3On', ...
-        'Timer', 0.1, ...
+        'Timer', 0.25, ...
         'StateChangeConditions', {'Tup', 'Flash3Off'}, ...
         'OutputActions', {'PWM1', 255,'PWM3', 255});
     sma = AddState(sma, 'Name', 'Flash3Off', ...
-        'Timer', 0.1, ...
+        'Timer', 0.25, ...
         'StateChangeConditions', {'Tup', 'ITI'}, ...
         'OutputActions', {});
 
@@ -297,8 +297,75 @@ for trialNum = 1:MaxTrials
         BpodSystem.Data.NewOffer(trialNum)      = NewOffer;
         BpodSystem.Data.ReviseTime(trialNum)    = reviseTime; %%NaN on non-revise trials
         BpodSystem.Data.DoRevise(trialNum)      = doRevise;
-        BpodSystem.Data.RatAccepted_Init(trialNum)   = init_accepted;
+        
         SaveBpodSessionData();  %%write to disk
+
+        %%% ====================================
+        %%% CALCULATE TRIAL DATA
+        %%% ====================================
+        
+        init_lat = BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.OfferAvailable(2);
+        choice_lat = BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.PlayOfferTone(2) - BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.PlayOfferTone(1);
+        if doRevise == 1
+            time_waited = reviseTime;
+            time_waited_rev = NewOffer;
+        else
+            time_waited = offerTime;
+            time_waited_rev = NaN;
+        end
+        reward_delta = 0;
+
+        if ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.RejectOffer(1)) || ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.OfferOmission(1))
+            accepted = 0;
+            time_waited = NaN;
+            time_waited_rev = NaN;
+        end
+
+        if ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.RewardDelivery(1))
+            rewarded = 1;
+            reward_delta = BpodSystem.Data.TrialSettings(trialNum).GUI.RewardAmount;
+        end
+
+        if ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.RejectOfferWait(1))
+            if ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.GracePeriod3(1))
+                time_waited_rev = BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.GracePeriod3(end-1) - BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.NewOfferTone(1);
+            end
+            if ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.GracePeriod2(1))
+                time_waited_rev = BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.GracePeriod2(end-1) - BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.NewOfferTone(1);
+            end
+            if ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.GracePeriod1(1))
+                time_waited_rev = NaN;
+                time_waited = BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.GracePeriod1(end-1) - BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.AcceptOffer(1);
+            end
+        end
+
+        %%% ====================================
+        %%% WRITE ALL TO DISK
+        %%% ====================================
+
+        BpodSystem.Data.InitLat(trialNum)       = init_lat;
+        BpodSystem.Data.ChoiceLat(trialNum)     = choice_lat;
+        BpodSystem.Data.TimeWaited(trialNum)    = time_waited;
+        BpodSystem.Data.TimeWaitedRev(trialNum) = time_waited_rev;
+        BpodSystem.Data.Accepted(trialNum)      = accepted;
+        BpodSystem.Data.Rewarded(trialNum)      = rewarded;
+
+        SaveBpodSessionData();  %%write to disk
+
+        %%% ====================================
+        %%% UPDATE GUI
+        %%% ====================================
+
+        LiveTrialTable('update', ...
+                        trialNum, ...
+                        offerTime, doRevise, reviseTime, NewOffer, ...
+                        init_lat, choice_lat, logical(accepted), time_waited, time_waited_rev, logical(rewarded), reward_delta);
+        if rewarded
+            OutcomePlot('update', offerTime, accepted+1);
+        else
+            OutcomePlot('update', offerTime, accepted);
+        end
+
     else
         warning('Trial %d failed', trialNum);
     end
