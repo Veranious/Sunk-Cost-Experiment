@@ -4,16 +4,19 @@ subjects = ["FakeSubject"];
 males = ["FakeSubject"];
 OutputFilepath = "DataTable_1.csv";
 
+% Create table with variable prefixes:
+%   - SUB for "Subject Info" (Subject and Session details)
+%   - SET for "Settings" (Trial settings as per GUI)
+%   - DTA for "Data" (Trial by Trial Data)
 DataTableTT = table();
 DataTableVariableNames = ["SUB_Rat", "SUB_Sex", "SUB_Date", "SUB_StartTime", ...
             "SET_SoundAttenuation", "SET_RewardAmount", "SET_OfferMu", "SET_OfferShapeKappa", ...
             "SET_NOfferMu", "SET_NOfferKappa", "SET_ReviseMu", "SET_ReviseKappa", "SET_ChoiceLatMax", ...
             "SET_OfferMin", "SET_OfferMax", "SET_ReviseTimeMin", "SET_ReviseTimeMax", ...
             "SET_NewOfferMin", "SET_NewOfferMax", "SET_ReviseProb", "SET_HzMax", "SET_ThresholdHz", ...
-            "DTA_TrialNum", "DTA_OfferTime", "DTA_NewOffer", "DTA_DoRevise", "DTA_ReviseTime", ...
+            "DTA_TrialNum", "DTA_Offer", "DTA_NewOffer", "DTA_DoRevise", "DTA_ReviseTime", ...
             "DTA_InitLat", "DTA_ChoiceLat", "DTA_TimeWaited", "DTA_TimeWaitedRev", ...
             "DTA_Accepted", "DTA_Rewarded"];
-
 
 for subject = subjects
     % Load the latest data file for this subject
@@ -32,42 +35,6 @@ for subject = subjects
         Sex = "M";
     else
         Sex = "F";
-    end
-
-    % Obtain trial by trial info from state data
-    init_lat = [];
-    choice_lat = [];
-    time_waited = SessionData.ReviseTime;
-    time_waited_rev = SessionData.NewOffer;
-    accepted = zeros(1, nTrials);
-    rewarded = zeros(1, nTrials);
-
-    for i = 1:nTrials
-        init_lat_val = SessionData.RawEvents.Trial{1, i}.States.OfferAvailable(2);
-        init_lat = [init_lat, init_lat_val];
-
-        choice_lat_val = SessionData.RawEvents.Trial{1, i}.States.PlayOfferTone(2) - SessionData.RawEvents.Trial{1, i}.States.PlayOfferTone(1);
-        choice_lat = [choice_lat, choice_lat_val];
-
-        if ~isnan(SessionData.RawEvents.Trial{1, i}.States.RejectOfferWait(1))
-            if ~isnan(SessionData.RawEvents.Trial{1, i}.States.GracePeriod3(1))
-                time_waited_rev(i) = SessionData.RawEvents.Trial{1, i}.States.GracePeriod3(end-1) - SessionData.RawEvents.Trial{1, i}.States.NewOfferTone(1);
-            end
-            if ~isnan(SessionData.RawEvents.Trial{1, i}.States.GracePeriod2(1))
-                time_waited_rev(i) = SessionData.RawEvents.Trial{1, i}.States.GracePeriod2(end-1) - SessionData.RawEvents.Trial{1, i}.States.NewOfferTone(1);
-            end
-            if ~isnan(SessionData.RawEvents.Trial{1, i}.States.GracePeriod1(1))
-                time_waited_rev(i) = NaN;
-                time_waited(i) = SessionData.RawEvents.Trial{1, i}.States.GracePeriod1(end-1) - SessionData.RawEvents.Trial{1, i}.States.AcceptOffer(1);
-            end
-        end
-
-        if isnan(SessionData.RawEvents.Trial{1, i}.States.RejectOffer(1))
-            accepted(i) = 1;
-        end
-        if ~isnan(SessionData.RawEvents.Trial{1, i}.States.RewardDelivery(1))
-            rewarded(i) = 1;
-        end
     end
 
     % Compose data table
@@ -98,15 +65,16 @@ for subject = subjects
                     SessionData.NewOffer.',... % Revised Offer Time
                     SessionData.DoRevise.',... % Whether or not revised offer was presented
                     SessionData.ReviseTime.',... % Time at which the initial offer was interrupted with the revised offer
-                    init_lat.',... % Time between central port being available and central port entry
-                    choice_lat.',... % Time between initial offer tone presentation and L/R choice
-                    time_waited.',... % Time in port for initial offer wait
-                    time_waited_rev.',... % Time in port for revised offer wait
-                    accepted.',... % Whether initial offer was accepted
-                    rewarded.',... % Whether reward was delivered (i.e., whether rat made it to the end)
+                    SessionData.InitLat.',... % Time between central port being available and central port entry
+                    SessionData.ChoiceLat.',... % Time between initial offer tone presentation and L/R choice
+                    SessionData.TimeWaited.',... % Time in port for initial offer wait
+                    SessionData.TimeWaitedRev.',... % Time in port for revised offer wait
+                    SessionData.Accepted.',... % Whether initial offer was accepted
+                    SessionData.Rewarded.',... % Whether reward was delivered (i.e., whether rat made it to the end)
                     'VariableNames', DataTableVariableNames);
 
     DataTableTT = [DataTableTT; TempTable];
 end
 
+% Write to file
 writetable(DataTableTT, OutputFilepath);
