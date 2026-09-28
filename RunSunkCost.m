@@ -10,16 +10,26 @@ global BpodSystem
 %   slot 5 ['P' 4] = reward tone                                             (RewardDelivery)
 %   slot 6 ['P' 5] = reject/abort tone (playing any wave interrupts others)  (RejectOffer, RejectOfferWait)
 %   slot 7 ['P' 6] = trial-start tone                                        (OfferAvailable)
-%   'X'            = stop all playback, silent reset                         (ITI)
+%   'X'            = stop all playback, silent reset                oc         (ITI)
 %
 % PITCH CODE: pitch = ThresholdHz * r^(timeRemaining/PitchMax), r = HzMax/ThresholdHz,
 %             PitchMax = max(OfferMax, NewOfferMax).
 %   -> LOG-pitch is linear in time remaining: every second is a constant PERCENTAGE
 %      step (not a constant Hz step), which is what Weber's law says the ear resolves.
 %      Long offers start high, short offers start low; O and R share one scale.
+%   -> 750 Hz -> 12 kHz is r = 16 (4 octaves). Over e.g. PitchMax = 30 s, one second of
+%      offer = a factor of 16^(1/30) = 1.097, i.e. ~9.7% per whole-second step.
+%
+% OFFER GRIDS (discrete, whole seconds - Restaurant Row style):
+%   O in OfferMin    : OfferStep : OfferMax        (default 1:1:30 -> 30 slots)
+%   R in NewOfferMin : OfferStep : NewOfferMax     (same spacing as O, shared pitch scale)
+%   S in AltTimeMin : 1 : min(AltTimeMax, O-1)   (whole seconds, strictly before reward)
+    %%  This is alternative time of Offer time in revised trials
+%   Each is drawn with betaRandIdx: a Beta(mu*kappa, (1-mu)*kappa) cut into equal slots,
+%   one slot per grid value.
 %
 % GLOBAL TIMERS (run independently of states in order to survive grace periods):
-%   GT1 = waitDuration (is reviseTime on revise trials, is offerTime otherwise)
+%   GT1 = waitDuration (is AltTime on revise trials, is offerTime otherwise)
 %   GT2 = NewOffer (second new offer countdown)
 
 %% Parameters (editable GUI)
@@ -27,32 +37,36 @@ S = BpodSystem.ProtocolSettings; % load settings chosen in launch manager
 if isempty(fieldnames(S))
     S.GUI.SoundAttenuation_dB = 0;  % loudness, 0 = loudest. Range: 0 to -103 (SD) / -120 (HD)
     S.GUI.RewardAmount = 3;      % ul, converted to valve time via calibration
-    %% Offer-time distributions: Beta(alpha,beta) rescaled onto [min,max].
-    %   Mu    = mean position in the range, in (0,1). 0.5 = symmetric.
+       %% Offer-time distributions: Beta(alpha,beta) cut into one slot per grid value.
+    %   Mu    = mean position along the grid, in (0,1). 0.5 = symmetric.
     %           > 0.5 skews toward LONG durations, < 0.5 toward SHORT.
-    %   Kappa = concentration, > 0.  Kappa = 2 with Mu = 0.5 is EXACTLY uniform.
+    %   Kappa = concentration, > 0.  Kappa = 2 with Mu = 0.5 is EXACTLY uniform over slots.
     %           Kappa < 2 -> U-shaped (mass at the extremes)
     %           Kappa > 2 -> bell (mass in the middle). Kappa = 10 is already tight.
     S.GUI.OfferMu     = 0.5;   S.GUI.OfferKappa   = 2;   % original offer O
     S.GUI.NOfferMu    = 0.5;   S.GUI.NOfferKappa  = 2;   % new offer R
-    S.GUI.ReviseMu    = 0.5;   S.GUI.ReviseKappa  = 2;   % revise timing S
+    S.GUI.AltMu    = 0.5;   S.GUI.AltKappa  = 2;   % revised Alternative timing S
     %
     S.GUI.ChoiceLatMax = 10;     % Max time allotted for choice
     %
-    S.GUI.OfferMin     = 2;      % s, keep > ReviseTimeMin (see guard in trial-type branch)
-    S.GUI.OfferMax     = 20;     % s
-    S.GUI.ReviseTimeMin = 0.5;   % s, minimum elapsed wait before a revise can fire
-    S.GUI.ReviseTimeMax = 20;    % s, cap on revise timing (extra leverage)
-    S.GUI.NewOfferMin  = 2;      % s
-    S.GUI.NewOfferMax  = 20;     % s
-    S.GUI.ReviseProb   = 0.5;    % probability a trial gets a revise offer (yes/no)
+    % All times are WHOLE SECONDS (one grid slot per second at OfferStep = 1).
+    S.GUI.OfferMin      = 1;     % s. Note: a 1 s offer can never be revised (no whole second before reward)
+    S.GUI.OfferMax      = 30;    % s
+    S.GUI.OfferStep     = 1;     % s between offered durations, applies to O and R (1 -> 30 slots) 
+                                 %         - 1 : 1 : 30 gives 1, 2, 3 … 30 (30 possible offers), 
+                                 %         - 2 : 2 : 20 gives 2, 4, 6 … 20 (10 possible offers)
+    S.GUI.AltTimeMin = 1;        % s, earliest whole second a revise can fire
+    S.GUI.AltTimeMax = 30;       % s, cap on revise timing (always also capped at O-1)
+    S.GUI.NewOfferMin   = 1;     % s
+    S.GUI.NewOfferMax   = 30;    % s
+    S.GUI.ReviseProb    = 0.5;   % probability a trial gets a revise offer (yes/no)
     % TONE RANGE: 1000-8000 Hz is fully audible to a human, good for bench testing.
     % Note : BEFORE RUNNING RATS, consider 4000/20000 instead: rats are most sensitive
     %      : around 8-38 kHz and relatively deaf near 1 kHz, which is exactly where the
+    %         - Note AY 9/16: replicate Redish paper, 750 Hz to 12 kHz.
     %      : countdown spends its final, most decision-critical seconds.
-    % Note AY 9/16: Replicate Redish paper by using 750 Hz to 12kHz
-    S.GUI.HzMax        = 12000;   % pitch of the LONGEST possible offer (OfferMax)
-    S.GUI.ThresholdHz  = 750;   % pitch at reward time (sweep endpoint)
+    S.GUI.HzMax        = 12000;  % pitch of the LONGEST possible offer (PitchMax)
+    S.GUI.ThresholdHz  = 750;    % pitch at reward time (sweep endpoint)
 end
 BpodParameterGUI('init', S);
 OutcomePlot('init');
@@ -70,6 +84,8 @@ nEnv = round(sf * 0.002);      % 2 ms fade applied at every sound onset,
 H.AMenvelope = (1:nEnv)/nEnv;  % and mirrored at offset - kills speaker clicks
 
 MaxTrials = 200;
+OfferToneDur = 0.5;            % s, length of the static offer tones O and R.
+                               % NewOfferTone's timer uses this too, so R is heard in full.
 
 %% Fixed sounds (those that are the same every trial, so loaded and pushed once here.)
 %% push() only commits slots that were newly loaded, so these survive the per-trial pushes below.
@@ -84,7 +100,7 @@ H.push;
 %%logs for data
 BpodSystem.Data.OfferTime   = []; % original offer O (s)
 BpodSystem.Data.NewOffer    = []; % new offer R (s), independent of O (NaN if none)
-BpodSystem.Data.ReviseTime  = []; % wait elapsed when revise fires = sunk cost S (NaN if none)
+BpodSystem.Data.AltTime  = [];    % wait elapsed when revise fires = sunk cost S (NaN if none)
 BpodSystem.Data.DoRevise    = []; % 1 = revise trial, 0 = normal trial
 
 %%The Trial specific code
@@ -108,34 +124,39 @@ for trialNum = 1:MaxTrials
         end
     end
 
-    %% Draw this trial's revision decision schedule up front
-    offerTime = betaRand(S.GUI.OfferMu, S.GUI.OfferKappa) * (S.GUI.OfferMax - S.GUI.OfferMin) + S.GUI.OfferMin;
+    %% Draw this trial's schedule up front, on whole-second grids
+    %  (grids rebuilt every trial so live GUI edits take effect)
+    offerGrid = S.GUI.OfferMin    : S.GUI.OfferStep : S.GUI.OfferMax;
+    newGrid   = S.GUI.NewOfferMin : S.GUI.OfferStep : S.GUI.NewOfferMax;
+
+    offerTime = offerGrid(betaRandIdx(S.GUI.OfferMu, S.GUI.OfferKappa, numel(offerGrid)));
     doRevise  = rand < S.GUI.ReviseProb;
-    hi = min(S.GUI.ReviseTimeMax, offerTime);   % revise can never land past the actual offer
+    % revise lands on a whole second, strictly BEFORE the original reward would arrive
+    AltGrid = S.GUI.AltTimeMin : 1 : min(S.GUI.AltTimeMax, offerTime - 1); %use 1 offer step to cut time randomly
 
     %% Build & upload this trial's sounds
     PitchMax = max(S.GUI.OfferMax, S.GUI.NewOfferMax);  % duration that maps to HzMax
-    r        = S.GUI.HzMax / S.GUI.ThresholdHz;         % total pitch ratio, e.g. 8 = 3 octaves
+    r        = S.GUI.HzMax / S.GUI.ThresholdHz;         % total pitch ratio, e.g. 16 = 4 octaves
     startHzO = S.GUI.ThresholdHz * r^(offerTime / PitchMax);
-    offerToneO = GenerateSineWave(sf, startHzO, 0.5) * 0.9;
+    offerToneO = GenerateSineWave(sf, startHzO, OfferToneDur) * 0.9;
     sweepO     = GenerateSweep(sf, startHzO, S.GUI.ThresholdHz, offerTime) * 0.9;
     H.load(1, offerToneO);
     H.load(3, sweepO);
 
     %% Trial-type branch: sets the first countdown's length and where it leads, plus its sounds depends on doRevise
-    if doRevise && hi > S.GUI.ReviseTimeMin %%guards against OfferMin < ReviseTimeMin settings
-        reviseTime   = S.GUI.ReviseTimeMin + betaRand(S.GUI.OfferMu, S.GUI.OfferKappa) * (hi - S.GUI.ReviseTimeMin);
-        waitDuration = reviseTime;
+    if doRevise && ~isempty(AltGrid)   %%empty when O is too short to revise (e.g. O = 1 s)
+        AltTime   = AltGrid(betaRandIdx(S.GUI.AltMu, S.GUI.AltKappa, numel(AltGrid)));
+        waitDuration = AltTime;
         waitEndDest  = 'NewOfferTone';
-        NewOffer     = betaRand(S.GUI.OfferMu, S.GUI.OfferKappa) * (S.GUI.NewOfferMax - S.GUI.NewOfferMin) + S.GUI.NewOfferMin;
+        NewOffer     = newGrid(betaRandIdx(S.GUI.NOfferMu, S.GUI.NOfferKappa, numel(newGrid)));
         startHzR   = S.GUI.ThresholdHz * r^(NewOffer / PitchMax);
-        offerToneR = GenerateSineWave(sf, startHzR, 0.5) * 0.9;
+        offerToneR = GenerateSineWave(sf, startHzR, OfferToneDur) * 0.9;
         sweepR     = GenerateSweep(sf, startHzR, S.GUI.ThresholdHz, NewOffer) * 0.9;
         H.load(2, offerToneR);
         H.load(4, sweepR);
     else
         doRevise     = false;   %keep the log honest if the guard blocked it
-        reviseTime   = NaN;
+        AltTime   = NaN;
         waitDuration = offerTime;
         waitEndDest  = 'RewardDelivery';
         NewOffer     = NaN;
@@ -145,7 +166,7 @@ for trialNum = 1:MaxTrials
 
     LiveTrialTable('update', ...
                     trialNum, ...
-                    offerTime, doRevise, reviseTime, NewOffer, ...
+                    offerTime, doRevise, AltTime, NewOffer, ...
                     '-', '-', '-', '-', '-', '-', 0);
 
     sma = NewStateMachine;
@@ -190,9 +211,9 @@ for trialNum = 1:MaxTrials
                                  'Port3Out','GracePeriod1'},...
         'OutputActions',{'PWM3',255});
 
-    %% NEW OFFER (revise trials only)
+    %% NEW OFFER (revised/alternative trials only)
     sma = AddState(sma,'Name','NewOfferTone',...
-        'Timer',0.1,...
+        'Timer',OfferToneDur,...
         'StateChangeConditions',{'Tup','DecreaseNew',...
                                  'Port3Out','GracePeriod2'},...
         'OutputActions',{'HiFi1',['P' 1],'PWM3',255});   %%offer tone R (slot 2)
@@ -295,7 +316,7 @@ for trialNum = 1:MaxTrials
         BpodSystem.Data.TrialSettings(trialNum) = S;          %%params this trial ran under
         BpodSystem.Data.OfferTime(trialNum)     = offerTime;
         BpodSystem.Data.NewOffer(trialNum)      = NewOffer;
-        BpodSystem.Data.ReviseTime(trialNum)    = reviseTime; %%NaN on non-revise trials
+        BpodSystem.Data.AltTime(trialNum)    = AltTime; %%NaN on non-revise trials
         BpodSystem.Data.DoRevise(trialNum)      = doRevise;
         
         SaveBpodSessionData();  %%write to disk
@@ -307,7 +328,7 @@ for trialNum = 1:MaxTrials
         init_lat = BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.OfferAvailable(2);
         choice_lat = BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.PlayOfferTone(2) - BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.PlayOfferTone(1);
         if doRevise == 1
-            time_waited = reviseTime;
+            time_waited = AltTime;
             time_waited_rev = NewOffer;
         else
             time_waited = offerTime;
@@ -358,7 +379,7 @@ for trialNum = 1:MaxTrials
 
         LiveTrialTable('update', ...
                         trialNum, ...
-                        offerTime, doRevise, reviseTime, NewOffer, ...
+                        offerTime, doRevise, AltTime, NewOffer, ...
                         init_lat, choice_lat, logical(accepted), time_waited, time_waited_rev, logical(rewarded), reward_delta);
         if rewarded
             OutcomePlot('update', offerTime, accepted+1);
@@ -378,38 +399,29 @@ for trialNum = 1:MaxTrials
 end
 end
 
-function u = betaRand(mu, kappa)
-%% Beta draw on (0,1), parameterised by mean and concentration.
-%  alpha = mu*kappa, beta = (1-mu)*kappa.  Sampled as the gamma ratio
-%  u = G(alpha) / (G(alpha) + G(beta)), which is the standard identity.
-mu    = min(max(mu, 1e-3), 1 - 1e-3);   % keep both shapes strictly positive
+function k = betaRandIdx(mu, kappa, N)
+%% Discrete Beta draw: returns a slot index k in 1..N.
+%  its share of the Beta(alpha,beta) curve, alpha = mu*kappa, beta = (1-mu)*kappa
+%  Slot shares are EXACT areas under the curve, not heights at the slot midpoints - so U-shaped settings (kappa < 2),
+%  where the curve shoots up at the edges, still give the edge slots their true mass.
+mu    = min(max(mu, 1e-3), 1 - 1e-3);   % keeps both shapes strictly positive
 kappa = max(kappa, 1e-3);
-a  = mu * kappa;
-b  = (1 - mu) * kappa;
-g1 = gammaRand(a);
-g2 = gammaRand(b);
-u  = g1 / (g1 + g2);
-end
+a = mu * kappa;
+b = (1 - mu) * kappa;
 
-function g = gammaRand(a)
-%% Gamma(shape = a, scale = 1), Marsaglia & Tsang (2000).
-%  Written out in base MATLAB so the rig does not need the Statistics toolbox
-%  (betarnd/gamrnd/randg all live there).
-if a < 1
-    g = gammaRand(a + 1) * rand^(1/a);   % boost: Gamma(a) = Gamma(a+1)*U^(1/a)
+if N <= 1
+    k = 1;
     return
 end
-d = a - 1/3;
-c = 1 / sqrt(9*d);
-while true
-    x = randn;
-    v = (1 + c*x)^3;
-    if v <= 0, continue; end
-    if log(rand) < 0.5*x^2 + d*(1 - v + log(v))
-        g = d * v;
-        return
-    end
-end
+
+% running total of probability at the right edge of each slot (ends at 1)
+running = betainc((1:N)/N, a, b);
+running(end) = 1;                       % guard: floating point can land a hair under 1
+
+% return the first slot whose running total covers it
+dart = rand;
+k = find(dart < running, 1, 'first');
+if isempty(k), k = N; end
 end
 
 function w = GenerateSweep(sf, f0, f1, dur)
