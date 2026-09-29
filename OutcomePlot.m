@@ -1,6 +1,6 @@
 function OutcomePlot(action, xVal, yVal)
 
-persistent OldPlotHandle RecentPlotHandle AxesHandle FitHandle YRaw XDataRaw
+persistent OldPlotHandle RecentPlotHandle AxesHandle FitHandle YRaw XDataRaw YJitter
 
 MinTrialsForFit = 2; % minimum trials (with both outcomes present) before fitting
 
@@ -24,6 +24,7 @@ switch action
 
         YRaw = [];
         XDataRaw = [];
+        YJitter = [];
 
     case 'update'
         if isempty(RecentPlotHandle) || ~isvalid(RecentPlotHandle)
@@ -31,13 +32,16 @@ switch action
             OutcomePlot('init');
         end
 
+        jitterAmount = 0.05;
         XDataRaw = [XDataRaw, xVal];
         YRaw = [YRaw, yVal];
+        YJitter = [YJitter, (rand-0.5)*2*jitterAmount];
 
         newX = XDataRaw;
         newYraw = YRaw;
 
         newY = min(newYraw,1);
+        newYplot = newY + YJitter;
 
         colors = zeros(numel(newYraw), 3);
         colors(newYraw == 1, :) = repmat([0.10 0.60 0.10], sum(newYraw == 1), 1); % green
@@ -53,11 +57,11 @@ switch action
 
         set(OldPlotHandle, ...
             'XData', newX(oldIdx), ...
-            'YData', newY(oldIdx), ...
+            'YData', newYplot(oldIdx), ...
             'CData', colors(oldIdx,:));
         set(RecentPlotHandle, ...
             'XData', newX(recentIdx), ...
-            'YData', newY(recentIdx), ...
+            'YData', newYplot(recentIdx), ...
             'CData', colors(recentIdx,:));
 
         xlim(AxesHandle, 'auto');
