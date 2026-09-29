@@ -10,11 +10,11 @@ OutputFilepath = "DataTable_1.csv";
 %   - DTA for "Data" (Trial by Trial Data)
 DataTableTT = table();
 DataTableVariableNames = ["SUB_Rat", "SUB_Sex", "SUB_Date", "SUB_StartTime", ...
-            "SET_SoundAttenuation", "SET_RewardAmount", "SET_OfferMu", "SET_OfferShapeKappa", ...
+            "SET_SoundAttenuation", "SET_MaxTrials", "SET_RewardAmount", "SET_OfferMu", "SET_OfferShapeKappa", ...
             "SET_NOfferMu", "SET_NOfferKappa", "SET_ReviseMu", "SET_ReviseKappa", "SET_ChoiceLatMax", ...
             "SET_OfferMin", "SET_OfferMax", "SET_ReviseTimeMin", "SET_ReviseTimeMax", ...
             "SET_NewOfferMin", "SET_NewOfferMax", "SET_ReviseProb", "SET_HzMax", "SET_ThresholdHz", ...
-            "DTA_TrialNum", "DTA_Offer", "DTA_NewOffer", "DTA_DoRevise", "DTA_ReviseTime", ...
+            "DTA_TrialNum", "DTA_Offer", "DTA_NewOffer", "DTA_DoRevise", "DTA_AltTime", ...
             "DTA_InitLat", "DTA_ChoiceLat", "DTA_TimeWaited", "DTA_TimeWaitedRev", ...
             "DTA_Accepted", "DTA_Rewarded"];
 
@@ -43,6 +43,7 @@ for subject = subjects
                     repmat(string(SessionData.Info.SessionDate), nTrials, 1), ... % Date
                     repmat(string(SessionData.Info.SessionStartTime_UTC), nTrials, 1), ... % Time
                     arrayfun(@(x) x.GUI.SoundAttenuation_dB, SessionData.TrialSettings).',...   % Settings
+                    arrayfun(@(x) x.GUI.MaxTrials, SessionData.TrialSettings).',...   % Settings                    
                     arrayfun(@(x) x.GUI.RewardAmount, SessionData.TrialSettings).',...          % Settings
                     arrayfun(@(x) x.GUI.OfferMu, SessionData.TrialSettings).',...           % Settings
                     arrayfun(@(x) x.GUI.OfferKappa, SessionData.TrialSettings).',...          % Settings
@@ -53,8 +54,8 @@ for subject = subjects
                     arrayfun(@(x) x.GUI.ChoiceLatMax, SessionData.TrialSettings).',...          % Settings
                     arrayfun(@(x) x.GUI.OfferMin, SessionData.TrialSettings).',...              % Settings
                     arrayfun(@(x) x.GUI.OfferMax, SessionData.TrialSettings).',...              % Settings
-                    arrayfun(@(x) x.GUI.ReviseTimeMin, SessionData.TrialSettings).',...         % Settings
-                    arrayfun(@(x) x.GUI.ReviseTimeMax, SessionData.TrialSettings).',...         % Settings
+                    arrayfun(@(x) x.GUI.AltTimeMin, SessionData.TrialSettings).',...         % Settings
+                    arrayfun(@(x) x.GUI.AltTimeMax, SessionData.TrialSettings).',...         % Settings
                     arrayfun(@(x) x.GUI.NewOfferMin, SessionData.TrialSettings).',...           % Settings
                     arrayfun(@(x) x.GUI.NewOfferMax, SessionData.TrialSettings).',...           % Settings
                     arrayfun(@(x) x.GUI.ReviseProb, SessionData.TrialSettings).',...            % Settings
@@ -64,7 +65,7 @@ for subject = subjects
                     SessionData.OfferTime.',... % Initial Offer Time
                     SessionData.NewOffer.',... % Revised Offer Time
                     SessionData.DoRevise.',... % Whether or not revised offer was presented
-                    SessionData.ReviseTime.',... % Time at which the initial offer was interrupted with the revised offer
+                    SessionData.AltTime.',... % Time at which the initial offer was interrupted with the revised offer
                     SessionData.InitLat.',... % Time between central port being available and central port entry
                     SessionData.ChoiceLat.',... % Time between initial offer tone presentation and L/R choice
                     SessionData.TimeWaited.',... % Time in port for initial offer wait
