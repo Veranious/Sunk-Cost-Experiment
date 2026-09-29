@@ -36,6 +36,7 @@ global BpodSystem
 S = BpodSystem.ProtocolSettings; % load settings chosen in launch manager
 if isempty(fieldnames(S))
     S.GUI.SoundAttenuation_dB = 0;  % loudness, 0 = loudest. Range: 0 to -103 (SD) / -120 (HD)
+    S.GUI.MaxTrials = 200;
     S.GUI.RewardAmount = 3;      % ul, converted to valve time via calibration
        %% Offer-time distributions: Beta(alpha,beta) cut into one slot per grid value.
     %   Mu    = mean position along the grid, in (0,1). 0.5 = symmetric.
@@ -60,11 +61,7 @@ if isempty(fieldnames(S))
     S.GUI.NewOfferMin   = 1;     % s
     S.GUI.NewOfferMax   = 30;    % s
     S.GUI.ReviseProb    = 0.5;   % probability a trial gets a revise offer (yes/no)
-    % TONE RANGE: 1000-8000 Hz is fully audible to a human, good for bench testing.
-    % Note : BEFORE RUNNING RATS, consider 4000/20000 instead: rats are most sensitive
-    %      : around 8-38 kHz and relatively deaf near 1 kHz, which is exactly where the
     %         - Note AY 9/16: replicate Redish paper, 750 Hz to 12 kHz.
-    %      : countdown spends its final, most decision-critical seconds.
     S.GUI.HzMax        = 12000;  % pitch of the LONGEST possible offer (PitchMax)
     S.GUI.ThresholdHz  = 750;    % pitch at reward time (sweep endpoint)
 end
@@ -83,7 +80,8 @@ H.SynthAmplitude = 0;          % make sure the synth is silent
 nEnv = round(sf * 0.002);      % 2 ms fade applied at every sound onset,
 H.AMenvelope = (1:nEnv)/nEnv;  % and mirrored at offset - kills speaker clicks
 
-MaxTrials = 200;
+cloud_components = 4;           % number of tones in each cloud
+cloud_range = 250;              % plus/minus Hz for the cloud from main tone
 OfferToneDur = 0.5;            % s, length of the static offer tones O and R.
                                % NewOfferTone's timer uses this too, so R is heard in full.
 
@@ -104,7 +102,7 @@ BpodSystem.Data.AltTime  = [];    % wait elapsed when revise fires = sunk cost S
 BpodSystem.Data.DoRevise    = []; % 1 = revise trial, 0 = normal trial
 
 %%The Trial specific code
-for trialNum = 1:MaxTrials
+for trialNum = 1:S.GUI.MaxTrials
 
     accepted = 1;
     rewarded = 0;
@@ -139,7 +137,7 @@ for trialNum = 1:MaxTrials
     r        = S.GUI.HzMax / S.GUI.ThresholdHz;         % total pitch ratio, e.g. 16 = 4 octaves
     startHzO = S.GUI.ThresholdHz * r^(offerTime / PitchMax);
     offerToneO = GenerateSineWave(sf, startHzO, OfferToneDur) * 0.9;
-    sweepO     = GenerateSweep(sf, startHzO, S.GUI.ThresholdHz, offerTime) * 0.9;
+    sweepO     = GenerateCloudTones(sf, startHzO, S.GUI.ThresholdHz, offerTime, cloud_range, cloud_components) * 0.9;
     H.load(1, offerToneO);
     H.load(3, sweepO);
 
@@ -151,7 +149,7 @@ for trialNum = 1:MaxTrials
         NewOffer     = newGrid(betaRandIdx(S.GUI.NOfferMu, S.GUI.NOfferKappa, numel(newGrid)));
         startHzR   = S.GUI.ThresholdHz * r^(NewOffer / PitchMax);
         offerToneR = GenerateSineWave(sf, startHzR, OfferToneDur) * 0.9;
-        sweepR     = GenerateSweep(sf, startHzR, S.GUI.ThresholdHz, NewOffer) * 0.9;
+        sweepR     = GenerateCloudTones(sf, startHzR, S.GUI.ThresholdHz, NewOffer, cloud_range, cloud_components) * 0.9;
         H.load(2, offerToneR);
         H.load(4, sweepR);
     else
@@ -349,14 +347,12 @@ for trialNum = 1:MaxTrials
 
         if ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.RejectOfferWait(1))
             if ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.GracePeriod3(1))
-                time_waited_rev = BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.GracePeriod3(end-1) - BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.NewOfferTone(1);
-            end
-            if ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.GracePeriod2(1))
-                time_waited_rev = BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.GracePeriod2(end-1) - BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.NewOfferTone(1);
-            end
-            if ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.GracePeriod1(1))
+                time_waited_rev = BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.GracePeriod3(end, 1) - BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.NewOfferTone(1);
+            elseif ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.GracePeriod2(1))
+                time_waited_rev = BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.GracePeriod2(end, 1) - BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.NewOfferTone(1);
+            elseif ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.GracePeriod1(1))
                 time_waited_rev = NaN;
-                time_waited = BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.GracePeriod1(end-1) - BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.AcceptOffer(1);
+                time_waited = BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.GracePeriod1(end, 1) - BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.AcceptOffer(1);
             end
         end
 
@@ -424,12 +420,22 @@ k = find(dart < running, 1, 'first');
 if isempty(k), k = N; end
 end
 
-function w = GenerateSweep(sf, f0, f1, dur)
-%% Exponential (log-linear) frequency sweep, f0 -> f1 Hz over dur seconds.
-%  Descends at a constant octaves/second, so perceived rate of change is uniform.
-%  Phase is still the integral of frequency - only the frequency curve changed.
-n     = round(dur * sf);
-f     = f0 * (f1/f0).^linspace(0, 1, n);   % geometric steps (was: linspace, arithmetic)
-phase = 2*pi*cumsum(f)/sf;                 % numerical integration
-w     = sin(phase);
+% Generate descending tone clouds
+function tone = GenerateCloudTones(sf, f0, f1, o, r_cloud, n_cloud)
+
+    step = (f0 - f1) / o;
+
+    tone = [];
+    offer_time = ceil(o);
+    for i = 1:offer_time
+        tone_piece = GenerateSineWave(sf, f0, 0.75);
+        for j = 1:n_cloud
+            r = randi([-r_cloud r_cloud]); 
+            tone_piece = tone_piece + GenerateSineWave(sf, f0+r, 0.75);
+        end
+        tone = [tone tone_piece GenerateSineWave(sf, 0, 0.25)];
+        f0 = f0 - step;
+    end
+    tail = (1 - mod(o, 1)) * sf;
+    tone(end-tail:end) = 0;
 end
