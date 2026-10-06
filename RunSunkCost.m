@@ -37,7 +37,7 @@ S = BpodSystem.ProtocolSettings; % load settings chosen in launch manager
 if isempty(fieldnames(S))
     S.GUI.SoundAttenuation_dB = 0;  % loudness, 0 = loudest. Range: 0 to -103 (SD) / -120 (HD)
     S.GUI.MaxTrials = 200;
-    S.GUI.RewardAmount = 3;      % ul, converted to valve time via calibration
+    S.GUI.RewardAmount = 30;      % ul, converted to valve time via calibration
        %% Offer-time distributions: Beta(alpha,beta) cut into one slot per grid value.
     %   Mu    = mean position along the grid, in (0,1). 0.5 = symmetric.
     %           > 0.5 skews toward LONG durations, < 0.5 toward SHORT.
@@ -80,8 +80,8 @@ H.SynthAmplitude = 0;          % make sure the synth is silent
 nEnv = round(sf * 0.002);      % 2 ms fade applied at every sound onset,
 H.AMenvelope = (1:nEnv)/nEnv;  % and mirrored at offset - kills speaker clicks
 
-cloud_components = 4;           % number of tones in each cloud
-cloud_range = 250;              % plus/minus Hz for the cloud from main tone
+cloud_components = 8;           % number of tones in each cloud
+cloud_range = 3;               % plus/minus semitones for the cloud from main tone
 OfferToneDur = 0.5;            % s, length of the static offer tones O and R.
                                % NewOfferTone's timer uses this too, so R is heard in full.
 
@@ -423,19 +423,26 @@ end
 % Generate descending tone clouds
 function tone = GenerateCloudTones(sf, f0, f1, o, r_cloud, n_cloud)
 
-    step = (f0 - f1) / o;
-
     tone = [];
+
+    ratio = (f1 / f0)^(1 / o); % log sweep
     offer_time = ceil(o);
+    
     for i = 1:offer_time
         tone_piece = GenerateSineWave(sf, f0, 0.75);
         for j = 1:n_cloud
-            r = randi([-r_cloud r_cloud]); 
-            tone_piece = tone_piece + GenerateSineWave(sf, f0+r, 0.75);
+            r = (rand*2-1) * r_cloud; % semitones
+            f = f0 * 2^(r/12); % semitone to Hz
+            tone_piece = tone_piece + GenerateSineWave(sf, f, 0.75);
         end
         tone = [tone tone_piece GenerateSineWave(sf, 0, 0.25)];
-        f0 = f0 - step;
+        f0 = f0 * ratio;
     end
-    tail = (1 - mod(o, 1)) * sf;
-    tone(end-tail:end) = 0;
+    
+    % Handle non-integer offers
+    frac = mod(o,1);
+    if frac > 0
+        tail = round((1 - frac) * sf);
+        tone(end-tail+1:end) = 0;
+    end
 end
