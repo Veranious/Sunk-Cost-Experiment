@@ -36,7 +36,8 @@ global BpodSystem
 S = BpodSystem.ProtocolSettings; % load settings chosen in launch manager
 if isempty(fieldnames(S))
     S.GUI.SoundAttenuation_dB = 0;  % loudness, 0 = loudest. Range: 0 to -103 (SD) / -120 (HD)
-    S.GUI.MaxTrials = 200;
+    S.GUI.MaxTrials = 2000;
+    S.GUI.SampleTime = 0.1;   % s the nose must stay in the centre port. Increase toward 0.5 over days.
     S.GUI.RewardAmount = 30;      % ul, converted to valve time via calibration
        %% Offer-time distributions: Beta(alpha,beta) cut into one slot per grid value.
     %   Mu    = mean position along the grid, in (0,1). 0.5 = symmetric.
@@ -44,7 +45,7 @@ if isempty(fieldnames(S))
     %   Kappa = concentration, > 0.  Kappa = 2 with Mu = 0.5 is EXACTLY uniform over slots.
     %           Kappa < 2 -> U-shaped (mass at the extremes)
     %           Kappa > 2 -> bell (mass in the middle). Kappa = 10 is already tight.
-    S.GUI.OfferMu     = 0.5;   S.GUI.OfferKappa   = 2;   % original offer O
+    S.GUI.OfferMu     = 0.5;   S.GUI.OfferKappa   = 0.2;   % original offer O
     S.GUI.NOfferMu    = 0.5;   S.GUI.NOfferKappa  = 2;   % new offer R
     S.GUI.AltMu    = 0.5;   S.GUI.AltKappa  = 2;   % revised Alternative timing S
     %
@@ -60,7 +61,7 @@ if isempty(fieldnames(S))
     S.GUI.AltTimeMax = 30;       % s, cap on revise timing (always also capped at O-1)
     S.GUI.NewOfferMin   = 1;     % s
     S.GUI.NewOfferMax   = 30;    % s
-    S.GUI.ReviseProb    = 0.5;   % probability a trial gets a revise offer (yes/no)
+    S.GUI.ReviseProb    = 0;   % probability a trial gets a revise offer (yes/no)
     %         - Note AY 9/16: replicate Redish paper, 750 Hz to 12 kHz.
     S.GUI.HzMax        = 12000;  % pitch of the LONGEST possible offer (PitchMax)
     S.GUI.ThresholdHz  = 750;    % pitch at reward time (sweep endpoint)
@@ -183,8 +184,14 @@ for trialNum = 1:S.GUI.MaxTrials
     %% Offer available (light cue)
     sma = AddState(sma,'Name','OfferAvailable',...
         'Timer',0,...
-        'StateChangeConditions',{'Port2In','PlayOfferTone'},...
+        'StateChangeConditions',{'Port2In','OfferSample'},...
         'OutputActions',{'HiFi1',['P' 6],'PWM2',255}); %%trial-start tone (slot 7)
+
+    sma = AddState(sma,'Name','OfferSample',...
+    'Timer',S.GUI.SampleTime,...
+    'StateChangeConditions',{'Tup','PlayOfferTone',...
+                             'Port2Out','EarlyWithdrawal'},...
+    'OutputActions',{'HiFi1',['P' 0],'PWM2',255});  %%offer tone O (slot 1)
 
     %% START OFFER + SOUND
     sma = AddState(sma,'Name','PlayOfferTone',...
@@ -192,7 +199,7 @@ for trialNum = 1:S.GUI.MaxTrials
         'StateChangeConditions',{'Port1In','RejectOffer',...
                                  'Port3In','AcceptOffer',...
                                  'Tup','OfferOmission'},...
-        'OutputActions',{'HiFi1',['P' 0],'PWM1',255,'PWM3',255}); %%offer tone O (slot 1)
+        'OutputActions',{'PWM1',255,'PWM3',255}); 
 
     %% ACCEPT: start the decay sweep AND the countdown together
     sma = AddState(sma,'Name','AcceptOffer',...
@@ -269,6 +276,12 @@ for trialNum = 1:S.GUI.MaxTrials
         'Timer',1,...
         'StateChangeConditions',{'Tup','ITI'},...
         'OutputActions',{'PWM1',255,'HiFi1',['P' 5]}); %%reject tone
+    
+    %% Left too early
+    sma = AddState(sma,'Name','EarlyWithdrawal',...
+        'Timer',1,...
+        'StateChangeConditions',{'Tup','ITI'},...
+        'OutputActions',{});
         
     %% OMISSION with flashing light
     sma = AddState(sma,'Name','OfferOmission',...
