@@ -101,6 +101,7 @@ BpodSystem.Data.OfferTime   = []; % original offer O (s)
 BpodSystem.Data.NewOffer    = []; % new offer R (s), independent of O (NaN if none)
 BpodSystem.Data.AltTime  = [];    % wait elapsed when revise fires = sunk cost S (NaN if none)
 BpodSystem.Data.DoRevise    = []; % 1 = revise trial, 0 = normal trial
+BpodSystem.Data.EarlyWithdrawal = []; % 1 = left the centre port before SampleTime
 
 %%The Trial specific code
 for trialNum = 1:S.GUI.MaxTrials
@@ -347,7 +348,8 @@ for trialNum = 1:S.GUI.MaxTrials
         end
         reward_delta = 0;
 
-        if ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.RejectOffer(1)) || ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.OfferOmission(1))
+        early_withdrawal = ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.EarlyWithdrawal(1));
+        if ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.RejectOffer(1)) || ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.OfferOmission(1)) || ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.EarlyWithdrawal(1))
             accepted = 0;
             time_waited = NaN;
             time_waited_rev = NaN;
@@ -375,6 +377,7 @@ for trialNum = 1:S.GUI.MaxTrials
 
         BpodSystem.Data.InitLat(trialNum)       = init_lat;
         BpodSystem.Data.ChoiceLat(trialNum)     = choice_lat;
+        BpodSystem.Data.EarlyWithdrawal(trialNum) = early_withdrawal;
         BpodSystem.Data.TimeWaited(trialNum)    = time_waited;
         BpodSystem.Data.TimeWaitedRev(trialNum) = time_waited_rev;
         BpodSystem.Data.Accepted(trialNum)      = accepted;
