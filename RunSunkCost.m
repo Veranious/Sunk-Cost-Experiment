@@ -10,6 +10,7 @@ global BpodSystem
 %   slot 5 ['P' 4] = reward tone                                             (RewardDelivery)
 %   slot 6 ['P' 5] = reject/abort tone (playing any wave interrupts others)  (RejectOffer, RejectOfferWait)
 %   slot 7 ['P' 6] = trial-start tone                                        (OfferAvailable)
+%   slot 8 ['P' 7] = omission rejection tone                                        (OfferOmission)
 %   'X'            = stop all playback, silent reset                oc         (ITI)
 %
 % PITCH CODE: pitch = ThresholdHz * r^(timeRemaining/PitchMax), r = HzMax/ThresholdHz,
@@ -49,7 +50,7 @@ if isempty(fieldnames(S))
     S.GUI.NOfferMu    = 0.5;   S.GUI.NOfferKappa  = 2;   % new offer R
     S.GUI.AltMu    = 0.5;   S.GUI.AltKappa  = 2;   % revised Alternative timing S
     %
-    S.GUI.ChoiceLatMax = 10;     % Max time allotted for choice
+    S.GUI.ChoiceLatMax = 5;     % Max time allotted for choice
     %
     % All times are WHOLE SECONDS (one grid slot per second at OfferStep = 1).
     S.GUI.OfferMin      = 1;     % s. Note: a 1 s offer can never be revised (no whole second before reward)
@@ -89,11 +90,13 @@ OfferToneDur = 0.5;            % s, length of the static offer tones O and R.
 %% Fixed sounds (those that are the same every trial, so loaded and pushed once here.)
 %% push() only commits slots that were newly loaded, so these survive the per-trial pushes below.
 rewardTone     = GenerateSineWave(sf, 4000, 0.2) * 0.9;   % slot 5
-rejectTone     = GenerateSineWave(sf, 300, 0.15) * 0.6;   % slot 6 - brief, low, deliberately neutral
-trialStartTone = GenerateSineWave(sf, 3000, 0.1) * 0.9;   % slot 7
+rejectTone     = GenerateSineWave(sf, 300, 0.2) * 0.9;   % slot 6 - brief, low, deliberately neutral
+trialStartTone = GenerateSineWave(sf, 3000, 0.2) * 0.9;   % slot 7
+omissionTone = GenerateWhiteNoise(sf, 20, 1000, 1) * 0.9;
 H.load(5, rewardTone);
 H.load(6, rejectTone);
 H.load(7, trialStartTone);
+H.load(8, omissionTone);
 H.push;
 
 %%logs for data
@@ -270,11 +273,11 @@ for trialNum = 1:S.GUI.MaxTrials
 
     %% REJECT 
     sma = AddState(sma,'Name','RejectOffer',...
-        'Timer',1,...
+        'Timer',0.25,...
         'StateChangeConditions',{'Tup','ITI'},...
         'OutputActions',{'PWM1',255,'HiFi1',['P' 5]}); %%reject tone (slot 6) interrupts any sweep
     sma = AddState(sma,'Name','RejectOfferWait',...
-        'Timer',1,...
+        'Timer',5,...
         'StateChangeConditions',{'Tup','ITI'},...
         'OutputActions',{'PWM1',255,'HiFi1',['P' 5]}); %%reject tone
     
@@ -286,9 +289,9 @@ for trialNum = 1:S.GUI.MaxTrials
         
     %% OMISSION with flashing light
     sma = AddState(sma,'Name','OfferOmission',...
-        'Timer',0.25,...
+        'Timer',20,...
         'StateChangeConditions',{'Tup','Flash1On'},...
-        'OutputActions',{'HiFi1',['P' 5]}); %%reject tone
+        'OutputActions',{'HiFi1',['P' 7]}); %%omission white noise
     sma = AddState(sma, 'Name', 'Flash1On', ...
         'Timer', 0.25, ...
         'StateChangeConditions', {'Tup', 'Flash1Off'}, ...
