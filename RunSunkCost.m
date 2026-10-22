@@ -38,7 +38,7 @@ S = BpodSystem.ProtocolSettings; % load settings chosen in launch manager
 if isempty(fieldnames(S))
     S.GUI.SoundAttenuation_dB = 0;  % loudness, 0 = loudest. Range: 0 to -103 (SD) / -120 (HD)
     S.GUI.MaxTrials = 2000;
-    S.GUI.SampleTime = 0.250;   % s the nose must stay in the centre port. Increase toward 0.5 over days.
+    S.GUI.SampleTime = 0.300;   % s the nose must stay in the centre port. Increase toward 0.5 over days.
     S.GUI.RewardAmount = 15;      % ul, converted to valve time via calibration
        %% Offer-time distributions: Beta(alpha,beta) cut into one slot per grid value.
     %   Mu    = mean position along the grid, in (0,1). 0.5 = symmetric.
