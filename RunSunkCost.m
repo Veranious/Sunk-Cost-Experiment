@@ -74,7 +74,7 @@ LiveTrialTable('init');
 %% HiFi module setup
 BpodSystem.assertModule('HiFi', 1);
 H = BpodHiFi(BpodSystem.ModuleUSB.HiFi1);
-sf = 96000;
+sf = 48000;
 H.SamplingRate = sf;
 H.HeadphoneAmpEnabled = true; H.HeadphoneAmpGain = 10;  % ignored on HD module
 H.DigitalAttenuation_dB = S.GUI.SoundAttenuation_dB;
@@ -105,6 +105,11 @@ BpodSystem.Data.NewOffer    = []; % new offer R (s), independent of O (NaN if no
 BpodSystem.Data.AltTime  = [];    % wait elapsed when revise fires = sunk cost S (NaN if none)
 BpodSystem.Data.DoRevise    = []; % 1 = revise trial, 0 = normal trial
 BpodSystem.Data.EarlyWithdrawal = []; % 1 = left the centre port before SampleTime
+
+%% Generate the base for sweeps
+PitchMax = max(S.GUI.OfferMax, S.GUI.NewOfferMax);  % duration that maps to HzMax
+r        = S.GUI.HzMax / S.GUI.ThresholdHz;         % total pitch ratio, e.g. 16 = 4 octaves
+masterSweep = GenerateCloudTones(sf, S.GUI.HzMax, S.GUI.ThresholdHz, PitchMax, cloud_range, cloud_components);
 
 %%The Trial specific code
 for trialNum = 1:S.GUI.MaxTrials
@@ -138,11 +143,10 @@ for trialNum = 1:S.GUI.MaxTrials
     AltGrid = S.GUI.AltTimeMin : 1 : min(S.GUI.AltTimeMax, offerTime - 1); %use 1 offer step to cut time randomly
 
     %% Build & upload this trial's sounds
-    PitchMax = max(S.GUI.OfferMax, S.GUI.NewOfferMax);  % duration that maps to HzMax
-    r        = S.GUI.HzMax / S.GUI.ThresholdHz;         % total pitch ratio, e.g. 16 = 4 octaves
     startHzO = S.GUI.ThresholdHz * r^(offerTime / PitchMax);
     offerToneO = GenerateSineWave(sf, startHzO, OfferToneDur) * 0.9;
-    sweepO     = GenerateCloudTones(sf, startHzO, S.GUI.ThresholdHz, offerTime, cloud_range, cloud_components) * 0.9;
+    nSamp  = round(offerTime * sf);
+    sweepO = masterSweep(end-nSamp+1 : end);
     H.load(1, offerToneO);
     H.load(3, sweepO);
 
@@ -154,7 +158,8 @@ for trialNum = 1:S.GUI.MaxTrials
         NewOffer     = newGrid(betaRandIdx(S.GUI.NOfferMu, S.GUI.NOfferKappa, numel(newGrid)));
         startHzR   = S.GUI.ThresholdHz * r^(NewOffer / PitchMax);
         offerToneR = GenerateSineWave(sf, startHzR, OfferToneDur) * 0.9;
-        sweepR     = GenerateCloudTones(sf, startHzR, S.GUI.ThresholdHz, NewOffer, cloud_range, cloud_components) * 0.9;
+        nSampR  = round(NewOffer * sf);
+        sweepR = masterSweep(end-nSampR+1 : end);
         H.load(2, offerToneR);
         H.load(4, sweepR);
     else
@@ -224,17 +229,20 @@ for trialNum = 1:S.GUI.MaxTrials
     sma = AddState(sma,'Name','NewOfferTone',...
         'Timer',OfferToneDur,...
         'StateChangeConditions',{'Tup','DecreaseNew',...
-                                 'Port3Out','GracePeriod2'},...
+                                 'Port3Out','GracePeriod2',...
+                                 'Condition1','GracePeriod2'},... %% evaluates if rat is already out of port before the new offer kicks in, sends to a grace period otherwise.
         'OutputActions',{'HiFi1',['P' 1],'PWM3',255});   %%offer tone R (slot 2)
     sma = AddState(sma,'Name','DecreaseNew',...
         'Timer',0.1,...
         'StateChangeConditions',{'Tup','WaitingForRewardNew',...
-                                 'Port3Out','GracePeriod3'},...
+                                 'Port3Out','GracePeriod3',...
+                                 'Condition1','GracePeriod3'},...
         'OutputActions',{'HiFi1',['P' 3],'GlobalTimerTrig',2,'PWM3',255}); %%decay sweep R (slot 4)
     sma = AddState(sma,'Name','WaitingForRewardNew',...
         'Timer',0,...
         'StateChangeConditions',{'GlobalTimer2_End','RewardDelivery',...
-                                 'Port3Out','GracePeriod3'},...
+                                 'Port3Out','GracePeriod3',...
+                                 'Condition1','GracePeriod3'},...
         'OutputActions',{'PWM3',255});
 
     %% GRACE PERIODS (countdowns and sweeps keep running throughout - both are hardware now)
