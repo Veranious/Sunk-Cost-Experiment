@@ -3,8 +3,7 @@ function OutcomePlot(action, xVal, yVal)
 persistent ...
     OldAcceptHandle RecentAcceptHandle FitAcceptHandle AxAccept ...
     OldRewardHandle RecentRewardHandle FitRewardHandle AxReward ...
-    XDataRaw YRaw YJitter ...
-    OfferMin OfferMax
+    XDataRaw YRaw YJitter
 
 MinTrialsForFit = 2; % minimum trials (with both outcomes present) before fitting
 
@@ -12,72 +11,53 @@ switch action
 
     case 'init'
 
-        % Pull offer range from protocol environment
-        S = evalin('base','S');
-        OfferMin = S.GUI.OfferMin;
-        OfferMax = S.GUI.OfferMax;
-
+        XDataRaw = [];
+        YRaw = [];
+        YJitter = [];
         Fig = figure( ...
             'Name','Outcome Plot', ...
             'NumberTitle','off', ...
             'Position',[100 100 1000 400]);
 
         %==============================================================
-        % LEFT PANEL: ACCEPTANCE
+        % LEFT PANEL: Accept/Reject
         %==============================================================
         AxAccept = subplot(1,2,1,'Parent',Fig);
         hold(AxAccept,'on');
 
         OldAcceptHandle = scatter(AxAccept,NaN,NaN,60,'filled', ...
             'MarkerFaceAlpha',0.5);
-
         RecentAcceptHandle = scatter(AxAccept,NaN,NaN,60,'filled', ...
             'MarkerFaceAlpha',1);
-
         FitAcceptHandle = plot(AxAccept,NaN,NaN,'k-','LineWidth',2);
 
         ylim(AxAccept,[-0.1 1.1]);
-        xlim(AxAccept,[OfferMin OfferMax]);
-
         set(AxAccept,'YTick',[0 1]);
 
         xlabel(AxAccept,'Initial Offer (sec.)');
         ylabel(AxAccept,'P(Accept Offer)');
-        title(AxAccept,'Accept vs Reject');
 
         grid(AxAccept,'on');
 
         %==============================================================
-        % RIGHT PANEL: REWARD AMONG ACCEPTED TRIALS
+        % RIGHT PANEL: Rewarded/Unrewarded among accepted offers
         %==============================================================
         AxReward = subplot(1,2,2,'Parent',Fig);
         hold(AxReward,'on');
 
         OldRewardHandle = scatter(AxReward,NaN,NaN,60,'filled', ...
             'MarkerFaceAlpha',0.5);
-
         RecentRewardHandle = scatter(AxReward,NaN,NaN,60,'filled', ...
             'MarkerFaceAlpha',1);
-
         FitRewardHandle = plot(AxReward,NaN,NaN,'k-','LineWidth',2);
 
         ylim(AxReward,[-0.1 1.1]);
-        xlim(AxReward,[OfferMin OfferMax]);
-
         set(AxReward,'YTick',[0 1]);
 
         xlabel(AxReward,'Initial Offer (sec.)');
         ylabel(AxReward,'P(Reward)');
-        title(AxReward,'Rewarded Accepted Trials');
 
         grid(AxReward,'on');
-
-        %==============================================================
-        % Data storage
-        %==============================================================
-        XDataRaw = [];
-        YRaw = [];
-        YJitter = [];
 
     case 'update'
 
@@ -95,7 +75,7 @@ switch action
         newYraw = YRaw;
 
         %==============================================================
-        % LEFT PANEL: ACCEPTANCE
+        % LEFT PANEL: Accept/Reject
         %
         % yVal coding:
         % 0 = rejected
@@ -155,7 +135,8 @@ switch action
                 slope = b(2);
                 bias = -b(1)/b(2);
 
-                xFit = linspace(OfferMin,OfferMax,200);
+                xFit = linspace(min(newX),max(newX),200);
+
                 yFit = 1 ./ (1 + exp(-slope*(xFit-bias)));
 
                 set(FitAcceptHandle,...
@@ -169,7 +150,7 @@ switch action
         end
 
         %==============================================================
-        % RIGHT PANEL: REWARD GIVEN ACCEPTANCE
+        % RIGHT PANEL: Rewarded/Unrewarded among accepted offers
         %
         % accepted/not rewarded -> 0 (green)
         % rewarded -> 1 (blue)
@@ -236,7 +217,8 @@ switch action
                 slope = b(2);
                 bias = -b(1)/b(2);
 
-                xFit = linspace(OfferMin,OfferMax,200);
+                xFit = linspace(min(rewardX),max(rewardX),200);
+
                 yFit = 1 ./ (1 + exp(-slope*(xFit-bias)));
 
                 set(FitRewardHandle,...
@@ -249,8 +231,22 @@ switch action
 
         end
 
-        xlim(AxAccept,[OfferMin OfferMax]);
-        xlim(AxReward,[OfferMin OfferMax]);
+        % Keep both axes synchronized and auto-expanding
+        if ~isempty(newX)
+
+            xmin = min(newX);
+            xmax = max(newX);
+
+            % Prevent xlim error when only one point exists
+            if xmin == xmax
+                xmin = xmin - 0.1;
+                xmax = xmax + 0.1;
+            end
+
+            xlim(AxAccept,[xmin xmax]);
+            xlim(AxReward,[xmin xmax]);
+
+        end
 
         drawnow limitrate;
 
