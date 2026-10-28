@@ -92,7 +92,7 @@ OfferToneDur = 0.5;            % s, length of the static offer tones O and R.
 rewardTone     = GenerateSineWave(sf, 4000, 0.2) * 0.9;   % slot 5
 rejectTone     = GenerateSineWave(sf, 300, 0.2) * 0.9;   % slot 6 - brief, low, deliberately neutral
 trialStartTone = GenerateSineWave(sf, 3000, 0.2) * 0.9;   % slot 7
-omissionTone = GenerateWhiteNoise(sf, 20, 0.6, 1);
+omissionTone = GenerateWhiteNoise(sf, 10, 0.6, 1);
 H.load(5, rewardTone);
 H.load(6, rejectTone);
 H.load(7, trialStartTone);
