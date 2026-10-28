@@ -92,7 +92,7 @@ OfferToneDur = 0.5;            % s, length of the static offer tones O and R.
 rewardTone     = GenerateSineWave(sf, 4000, 0.2) * 0.9;   % slot 5
 rejectTone     = GenerateSineWave(sf, 300, 0.2) * 0.9;   % slot 6 - brief, low, deliberately neutral
 trialStartTone = GenerateSineWave(sf, 3000, 0.2) * 0.9;   % slot 7
-omissionTone = GenerateWhiteNoise(sf, 20, 1000, 1) * 0.9;
+omissionTone = GenerateWhiteNoise(sf, 20, 0.5, 1);
 H.load(5, rewardTone);
 H.load(6, rejectTone);
 H.load(7, trialStartTone);
@@ -105,11 +105,15 @@ BpodSystem.Data.NewOffer    = []; % new offer R (s), independent of O (NaN if no
 BpodSystem.Data.AltTime  = [];    % wait elapsed when revise fires = sunk cost S (NaN if none)
 BpodSystem.Data.DoRevise    = []; % 1 = revise trial, 0 = normal trial
 BpodSystem.Data.EarlyWithdrawal = []; % 1 = left the centre port before SampleTime
+BpodSystem.Data.HiFiGlitchTrials = [];   % trials where a HiFi command had to be retried
 
 %% Generate the base for sweeps
 PitchMax = max(S.GUI.OfferMax, S.GUI.NewOfferMax);  % duration that maps to HzMax
 r        = S.GUI.HzMax / S.GUI.ThresholdHz;         % total pitch ratio, e.g. 16 = 4 octaves
 masterSweep = GenerateCloudTones(sf, S.GUI.HzMax, S.GUI.ThresholdHz, PitchMax, cloud_range, cloud_components);
+assert(abs(numel(masterSweep) - PitchMax*sf) <= 2, ...
+       'masterSweep is %d samples, expected %d. Slice boundaries will not land on pip onsets.', ...
+       numel(masterSweep), PitchMax*sf);
 
 %%The Trial specific code
 for trialNum = 1:S.GUI.MaxTrials
@@ -118,8 +122,7 @@ for trialNum = 1:S.GUI.MaxTrials
     rewarded = 0;
 
     S = BpodParameterGUI('sync', S); %%which pulls any live GUI changes
-    H.DigitalAttenuation_dB = S.GUI.SoundAttenuation_dB;
-    fprintf('Trial %d: attenuation = %g dB\n', trialNum, H.DigitalAttenuation_dB); %%remove this Part after testing
+    hifiSafe(@() setAtten(H, S.GUI.SoundAttenuation_dB), trialNum);
 
     %% Reward valve time from the liquid calibration table (port 3 = wait/reward port)
     try
@@ -136,6 +139,7 @@ for trialNum = 1:S.GUI.MaxTrials
     %  (grids rebuilt every trial so live GUI edits take effect)
     offerGrid = S.GUI.OfferMin    : S.GUI.OfferStep : S.GUI.OfferMax;
     newGrid   = S.GUI.NewOfferMin : S.GUI.OfferStep : S.GUI.NewOfferMax;
+    assert(max(offerGrid) <= PitchMax && max(newGrid) <= PitchMax, 'OfferMax/NewOfferMax raised above the session''s PitchMax. Restart the protocol.');
 
     offerTime = offerGrid(betaRandIdx(S.GUI.OfferMu, S.GUI.OfferKappa, numel(offerGrid)));
     doRevise  = rand < S.GUI.ReviseProb;
@@ -147,8 +151,8 @@ for trialNum = 1:S.GUI.MaxTrials
     offerToneO = GenerateSineWave(sf, startHzO, OfferToneDur) * 0.9;
     nSamp  = round(offerTime * sf);
     sweepO = masterSweep(end-nSamp+1 : end);
-    H.load(1, offerToneO);
-    H.load(3, sweepO);
+    hifiSafe(@() H.load(1, offerToneO), trialNum);
+    hifiSafe(@() H.load(3, sweepO),     trialNum);
 
     %% Trial-type branch: sets the first countdown's length and where it leads, plus its sounds depends on doRevise
     if doRevise && ~isempty(AltGrid)   %%empty when O is too short to revise (e.g. O = 1 s)
@@ -160,8 +164,8 @@ for trialNum = 1:S.GUI.MaxTrials
         offerToneR = GenerateSineWave(sf, startHzR, OfferToneDur) * 0.9;
         nSampR  = round(NewOffer * sf);
         sweepR = masterSweep(end-nSampR+1 : end);
-        H.load(2, offerToneR);
-        H.load(4, sweepR);
+        hifiSafe(@() H.load(2, offerToneR), trialNum);
+        hifiSafe(@() H.load(4, sweepR),     trialNum);
     else
         doRevise     = false;   %keep the log honest if the guard blocked it
         AltTime   = NaN;
@@ -170,7 +174,7 @@ for trialNum = 1:S.GUI.MaxTrials
         NewOffer     = NaN;
     end
 
-    H.push;   % commit new waveforms to the playback buffers
+    hifiSafe(@() H.push(), trialNum);   % commit new waveforms to the playback buffers
 
     LiveTrialTable('update', ...
                     trialNum, ...
@@ -341,8 +345,12 @@ for trialNum = 1:S.GUI.MaxTrials
         BpodSystem.Data.NewOffer(trialNum)      = NewOffer;
         BpodSystem.Data.AltTime(trialNum)    = AltTime; %%NaN on non-revise trials
         BpodSystem.Data.DoRevise(trialNum)      = doRevise;
-        
-        SaveBpodSessionData();  %%write to disk
+        St = BpodSystem.Data.RawEvents.Trial{1, trialNum}.States;
+        newOfferFired = ~isnan(St.NewOfferTone(1));
+        reviseToEmptyPort = newOfferFired && ~isnan(St.GracePeriod2(1)) && ...
+                    (St.GracePeriod2(1,1) - St.NewOfferTone(1,1)) < 0.01;
+        BpodSystem.Data.NewOfferFired(trialNum)     = newOfferFired;
+        BpodSystem.Data.ReviseToEmptyPort(trialNum) = reviseToEmptyPort;
 
         %%% ====================================
         %%% CALCULATE TRIAL DATA
@@ -380,6 +388,9 @@ for trialNum = 1:S.GUI.MaxTrials
                 time_waited_rev = NaN;
                 time_waited = BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.GracePeriod1(end, 1) - BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.AcceptOffer(1);
             end
+        end
+        if reviseToEmptyPort
+            time_waited_rev = NaN;   % the rat was never there to hear R
         end
 
         %%% ====================================
@@ -422,39 +433,51 @@ for trialNum = 1:S.GUI.MaxTrials
 end
 end
 
-function k = betaRandIdx(mu, kappa, N)
+
 %% Discrete Beta draw: returns a slot index k in 1..N.
 %  its share of the Beta(alpha,beta) curve, alpha = mu*kappa, beta = (1-mu)*kappa
 %  Slot shares are EXACT areas under the curve, not heights at the slot midpoints - so U-shaped settings (kappa < 2),
 %  where the curve shoots up at the edges, still give the edge slots their true mass.
+function k = betaRandIdx(mu, kappa, N)
 mu    = min(max(mu, 1e-3), 1 - 1e-3);   % keeps both shapes strictly positive
 kappa = max(kappa, 1e-3);
 a = mu * kappa;
 b = (1 - mu) * kappa;
-
 if N <= 1
     k = 1;
     return
 end
-
 % running total of probability at the right edge of each slot (ends at 1)
 running = betainc((1:N)/N, a, b);
 running(end) = 1;                       % guard: floating point can land a hair under 1
-
 % return the first slot whose running total covers it
 dart = rand;
 k = find(dart < running, 1, 'first');
 if isempty(k), k = N; end
 end
+function setAtten(H, dB)
+H.DigitalAttenuation_dB = dB;
+end
+
+
+% Run one HiFi command for HiFi crashes. If the module misses a reply, log it and retry once.
+function hifiSafe(fn, trialNum)
+global BpodSystem
+try
+    fn();
+catch
+    BpodSystem.Data.HiFiGlitchTrials(end+1) = trialNum;
+    pause(0.2);
+    fn();   % second failure is a real fault: let it stop the session
+end
+end
+
 
 % Generate descending tone clouds
 function tone = GenerateCloudTones(sf, f0, f1, o, r_cloud, n_cloud)
-
     tone = [];
-
     ratio = (f1 / f0)^(1 / o); % log sweep
     offer_time = ceil(o);
-    
     for i = 1:offer_time
         tone_piece = GenerateSineWave(sf, f0, 0.75);
         for j = 1:n_cloud
@@ -465,7 +488,6 @@ function tone = GenerateCloudTones(sf, f0, f1, o, r_cloud, n_cloud)
         tone = [tone tone_piece GenerateSineWave(sf, 0, 0.25)];
         f0 = f0 * ratio;
     end
-    
     % Handle non-integer offers
     frac = mod(o,1);
     if frac > 0
