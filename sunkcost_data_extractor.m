@@ -1,8 +1,8 @@
 %% Parameters: Modify before running
 base_dir = "C:/Users/Alex/Downloads/bpod_test/Bpod Local/Data/";
-subjects = ["FakeSubject"];
-males = ["FakeSubject"];
-OutputFilepath = "DataTable_1.csv";
+subjects = ["AY01"];
+males = [""];
+OutputFilepath = "DataTable_2.csv";
 
 % Create table with variable prefixes:
 %   - SUB for "Subject Info" (Subject and Session details)
@@ -10,13 +10,13 @@ OutputFilepath = "DataTable_1.csv";
 %   - DTA for "Data" (Trial by Trial Data)
 DataTableTT = table();
 DataTableVariableNames = ["SUB_Rat", "SUB_Sex", "SUB_Date", "SUB_StartTime", ...
-            "SET_SoundAttenuation", "SET_MaxTrials", "SET_RewardAmount", "SET_OfferMu", "SET_OfferShapeKappa", ...
-            "SET_NOfferMu", "SET_NOfferKappa", "SET_ReviseMu", "SET_ReviseKappa", "SET_ChoiceLatMax", ...
-            "SET_OfferMin", "SET_OfferMax", "SET_ReviseTimeMin", "SET_ReviseTimeMax", ...
+            "SET_SoundAttenuation", "SET_MaxTrials", "SET_SampleTime", "SET_RewardAmount", "SET_OfferMu", ...
+            "SET_OfferKappa", "SET_NOfferMu", "SET_NOfferKappa", "SET_AltMu", "SET_AltKappa", "SET_ChoiceLatMax", ...
+            "SET_OfferMin", "SET_OfferMax", "SET_OfferStep", "SET_AltTimeMin", "SET_AltTimeMax", ...
             "SET_NewOfferMin", "SET_NewOfferMax", "SET_ReviseProb", "SET_HzMax", "SET_ThresholdHz", ...
             "DTA_TrialNum", "DTA_Offer", "DTA_NewOffer", "DTA_DoRevise", "DTA_AltTime", ...
             "DTA_InitLat", "DTA_ChoiceLat", "DTA_TimeWaited", "DTA_TimeWaitedRev", ...
-            "DTA_Accepted", "DTA_Rewarded"];
+            "DTA_Accepted", "DTA_Rewarded", "DTA_EarlyWithdrawal", "DTA_ChoiceOmission"];
 
 for subject = subjects
     % Load the latest data file for this subject
@@ -43,14 +43,16 @@ for subject = subjects
                     repmat(string(SessionData.Info.SessionDate), nTrials, 1), ... % Date
                     repmat(string(SessionData.Info.SessionStartTime_UTC), nTrials, 1), ... % Time
                     arrayfun(@(x) x.GUI.SoundAttenuation_dB, SessionData.TrialSettings).',...   % Settings
-                    arrayfun(@(x) x.GUI.MaxTrials, SessionData.TrialSettings).',...   % Settings                    
+                    arrayfun(@(x) x.GUI.MaxTrials, SessionData.TrialSettings).',...   % Settings       
+                    arrayfun(@(x) x.GUI.SampleTime, SessionData.TrialSettings).',...   % Settings                    
                     arrayfun(@(x) x.GUI.RewardAmount, SessionData.TrialSettings).',...          % Settings
                     arrayfun(@(x) x.GUI.OfferMu, SessionData.TrialSettings).',...           % Settings
                     arrayfun(@(x) x.GUI.OfferKappa, SessionData.TrialSettings).',...          % Settings
+                    arrayfun(@(x) x.GUI.OfferStep, SessionData.TrialSettings).',...          % Settings
                     arrayfun(@(x) x.GUI.NOfferMu, SessionData.TrialSettings).',...          % Settings
                     arrayfun(@(x) x.GUI.NOfferKappa, SessionData.TrialSettings).',...          % Settings
-                    arrayfun(@(x) x.GUI.ReviseMu, SessionData.TrialSettings).',...          % Settings
-                    arrayfun(@(x) x.GUI.ReviseKappa, SessionData.TrialSettings).',...          % Settings
+                    arrayfun(@(x) x.GUI.AltMu, SessionData.TrialSettings).',...          % Settings
+                    arrayfun(@(x) x.GUI.AltKappa, SessionData.TrialSettings).',...          % Settings
                     arrayfun(@(x) x.GUI.ChoiceLatMax, SessionData.TrialSettings).',...          % Settings
                     arrayfun(@(x) x.GUI.OfferMin, SessionData.TrialSettings).',...              % Settings
                     arrayfun(@(x) x.GUI.OfferMax, SessionData.TrialSettings).',...              % Settings
@@ -72,6 +74,8 @@ for subject = subjects
                     SessionData.TimeWaitedRev.',... % Time in port for revised offer wait
                     SessionData.Accepted.',... % Whether initial offer was accepted
                     SessionData.Rewarded.',... % Whether reward was delivered (i.e., whether rat made it to the end)
+                    SessionData.EarlyWithdrawal.',... % Whether initial offer was accepted
+                    SessionData.ChoiceOmission.',... % Whether reward was delivered (i.e., whether rat made it to the end)
                     'VariableNames', DataTableVariableNames);
 
     DataTableTT = [DataTableTT; TempTable];
