@@ -19,10 +19,12 @@ switch action
             'NumberTitle','off', ...
             'Position',[100 100 1000 400]);
 
+            Layout = tiledlayout(Fig,1,2,'TileSpacing','compact','Padding','compact');
+
         %==============================================================
         % LEFT PANEL: Accept/Reject
         %==============================================================
-        AxAccept = subplot(1,2,1,'Parent',Fig);
+        AxAccept = nexttile(Layout);
         hold(AxAccept,'on');
 
         OldAcceptHandle = scatter(AxAccept,NaN,NaN,60,'filled', ...
@@ -42,7 +44,7 @@ switch action
         %==============================================================
         % RIGHT PANEL: Rewarded/Unrewarded among accepted offers
         %==============================================================
-        AxReward = subplot(1,2,2,'Parent',Fig);
+        AxReward = nexttile(Layout);
         hold(AxReward,'on');
 
         OldRewardHandle = scatter(AxReward,NaN,NaN,60,'filled', ...
@@ -58,6 +60,19 @@ switch action
         ylabel(AxReward,'P(Reward)');
 
         grid(AxReward,'on');
+
+        %==============================================================
+        % LEGEND (below both plots)
+        % with dummy handles
+        %==============================================================
+        hRej   = scatter(AxAccept,NaN,NaN,60,[0.80 0.10 0.10],'filled');
+        hAccNR = scatter(AxAccept,NaN,NaN,60,[0.10 0.60 0.10],'filled');
+        hRew   = scatter(AxAccept,NaN,NaN,60,[0.10 0.10 0.80],'filled');
+
+        Lgd = legend(AxAccept, [hRej hAccNR hRew], ...
+             {'Rejected','Accepted, not rewarded','Rewarded'}, ...
+             'Orientation','horizontal','AutoUpdate','off');
+        Lgd.Layout.Tile = 'south';
 
     case 'update'
 
