@@ -38,7 +38,7 @@ S = BpodSystem.ProtocolSettings; % load settings chosen in launch manager
 if isempty(fieldnames(S))
     S.GUI.SoundAttenuation_dB = 0;  % loudness, 0 = loudest. Range: 0 to -103 (SD) / -120 (HD)
     S.GUI.MaxTrials = 2000;
-    S.GUI.SampleTime = 0.300;   % s the nose must stay in the centre port. Increase toward 0.5 over days.
+    S.GUI.SampleTime = 0.400;   % s the nose must stay in the centre port. Increase toward 0.5 over days.
     S.GUI.RewardAmount = 15;      % ul, converted to valve time via calibration
        %% Offer-time distributions: Beta(alpha,beta) cut into one slot per grid value.
     %   Mu    = mean position along the grid, in (0,1). 0.5 = symmetric.
@@ -105,6 +105,7 @@ BpodSystem.Data.NewOffer    = []; % new offer R (s), independent of O (NaN if no
 BpodSystem.Data.AltTime  = [];    % wait elapsed when revise fires = sunk cost S (NaN if none)
 BpodSystem.Data.DoRevise    = []; % 1 = revise trial, 0 = normal trial
 BpodSystem.Data.EarlyWithdrawal = []; % 1 = left the centre port before SampleTime
+BpodSystem.Data.ChoiceOmission = []; % 1 = did not make choice within allotted window
 
 %%The Trial specific code
 for trialNum = 1:S.GUI.MaxTrials
@@ -362,6 +363,7 @@ for trialNum = 1:S.GUI.MaxTrials
         reward_delta = 0;
 
         early_withdrawal = ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.EarlyWithdrawal(1));
+        choice_omission = ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.OfferOmission(1));
         if ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.RejectOffer(1)) || ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.OfferOmission(1)) || ~isnan(BpodSystem.Data.RawEvents.Trial{1, trialNum}.States.EarlyWithdrawal(1))
             accepted = 0;
             time_waited = NaN;
@@ -391,6 +393,7 @@ for trialNum = 1:S.GUI.MaxTrials
         BpodSystem.Data.InitLat(trialNum)       = init_lat;
         BpodSystem.Data.ChoiceLat(trialNum)     = choice_lat;
         BpodSystem.Data.EarlyWithdrawal(trialNum) = early_withdrawal;
+        BpodSystem.Data.ChoiceOmission(trialNum) = choice_omission;
         BpodSystem.Data.TimeWaited(trialNum)    = time_waited;
         BpodSystem.Data.TimeWaitedRev(trialNum) = time_waited_rev;
         BpodSystem.Data.Accepted(trialNum)      = accepted;
@@ -405,7 +408,7 @@ for trialNum = 1:S.GUI.MaxTrials
         LiveTrialTable('update', ...
                         trialNum, ...
                         offerTime, doRevise, AltTime, NewOffer, ...
-                        init_lat, choice_lat, logical(accepted), time_waited, time_waited_rev, logical(rewarded), reward_delta);
+                        init_lat, choice_lat, logical(accepted), time_waited, time_waited_rev, logical(rewarded), reward_delta, early_withdrawal, choice_omission);
         if ~early_withdrawal
             if rewarded
                 OutcomePlot('update', offerTime, accepted+1);
