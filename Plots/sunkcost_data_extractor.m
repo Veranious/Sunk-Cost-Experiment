@@ -1,8 +1,8 @@
 %% Parameters: Modify before running
 base_dir = "C:/Users/Alex/Downloads/bpod_test/Bpod Local/Data/";
-subjects = ["AY01"];
+subjects = ["AY01", "AY02", "AY03", "AY04"];
 males = [""];
-OutputFilepath = "DataTable_2.csv";
+OutputFilepath = "DataTable_20261116.csv";
 
 % Create table with variable prefixes:
 %   - SUB for "Subject Info" (Subject and Session details)
@@ -19,66 +19,64 @@ DataTableVariableNames = ["SUB_Rat", "SUB_Sex", "SUB_Date", "SUB_StartTime", ...
             "DTA_Accepted", "DTA_Rewarded", "DTA_EarlyWithdrawal", "DTA_ChoiceOmission"];
 
 for subject = subjects
-    % Load the latest data file for this subject
     data_dir = base_dir + subject + "/RunSunkCost_NoHiFi/Session Data/";
     dirc = dir(data_dir + "/*.mat");
     dirc = dirc(~[dirc.isdir]);
-    [A,I] = max([dirc(:).datenum]);
-    if ~isempty(I)
-        latestfile = dirc(I).name;
+    
+    for k = 1:size(dirc)
+        load(data_dir + dirc(k).name);
+    
+        % Obtain session info
+        nTrials = SessionData.nTrials;
+        if (ismember(subject, males))
+            Sex = "M";
+        else
+            Sex = "F";
+        end
+    
+        % Compose data table
+        TempTable = table(repmat(subject, nTrials, 1), ... % Rat
+                        repmat(Sex, nTrials, 1), ... % Sex
+                        repmat(string(SessionData.Info.SessionDate), nTrials, 1), ... % Date
+                        repmat(string(SessionData.Info.SessionStartTime_UTC), nTrials, 1), ... % Time
+                        arrayfun(@(x) x.GUI.SoundAttenuation_dB, SessionData.TrialSettings).',...   % Settings
+                        arrayfun(@(x) x.GUI.MaxTrials, SessionData.TrialSettings).',...   % Settings       
+                        arrayfun(@(x) x.GUI.SampleTime, SessionData.TrialSettings).',...   % Settings                    
+                        arrayfun(@(x) x.GUI.RewardAmount, SessionData.TrialSettings).',...          % Settings
+                        arrayfun(@(x) x.GUI.OfferMu, SessionData.TrialSettings).',...           % Settings
+                        arrayfun(@(x) x.GUI.OfferKappa, SessionData.TrialSettings).',...          % Settings
+                        arrayfun(@(x) x.GUI.OfferStep, SessionData.TrialSettings).',...          % Settings
+                        arrayfun(@(x) x.GUI.NOfferMu, SessionData.TrialSettings).',...          % Settings
+                        arrayfun(@(x) x.GUI.NOfferKappa, SessionData.TrialSettings).',...          % Settings
+                        arrayfun(@(x) x.GUI.AltMu, SessionData.TrialSettings).',...          % Settings
+                        arrayfun(@(x) x.GUI.AltKappa, SessionData.TrialSettings).',...          % Settings
+                        arrayfun(@(x) x.GUI.ChoiceLatMax, SessionData.TrialSettings).',...          % Settings
+                        arrayfun(@(x) x.GUI.OfferMin, SessionData.TrialSettings).',...              % Settings
+                        arrayfun(@(x) x.GUI.OfferMax, SessionData.TrialSettings).',...              % Settings
+                        arrayfun(@(x) x.GUI.AltTimeMin, SessionData.TrialSettings).',...         % Settings
+                        arrayfun(@(x) x.GUI.AltTimeMax, SessionData.TrialSettings).',...         % Settings
+                        arrayfun(@(x) x.GUI.NewOfferMin, SessionData.TrialSettings).',...           % Settings
+                        arrayfun(@(x) x.GUI.NewOfferMax, SessionData.TrialSettings).',...           % Settings
+                        arrayfun(@(x) x.GUI.ReviseProb, SessionData.TrialSettings).',...            % Settings
+                        arrayfun(@(x) x.GUI.HzMax, SessionData.TrialSettings).',...                 % Settings
+                        arrayfun(@(x) x.GUI.ThresholdHz, SessionData.TrialSettings).',...           % Settings
+                        [1:nTrials].',... % TrialNo
+                        SessionData.OfferTime.',... % Initial Offer Time
+                        SessionData.NewOffer.',... % Revised Offer Time
+                        SessionData.DoRevise.',... % Whether or not revised offer was presented
+                        SessionData.AltTime.',... % Time at which the initial offer was interrupted with the revised offer
+                        SessionData.InitLat.',... % Time between central port being available and central port entry
+                        SessionData.ChoiceLat.',... % Time between initial offer tone presentation and L/R choice
+                        SessionData.TimeWaited.',... % Time in port for initial offer wait
+                        SessionData.TimeWaitedRev.',... % Time in port for revised offer wait
+                        SessionData.Accepted.',... % Whether initial offer was accepted
+                        SessionData.Rewarded.',... % Whether reward was delivered (i.e., whether rat made it to the end)
+                        SessionData.EarlyWithdrawal.',... % Whether initial offer was accepted
+                        SessionData.ChoiceOmission.',... % Whether reward was delivered (i.e., whether rat made it to the end)
+                        'VariableNames', DataTableVariableNames);
+    
+        DataTableTT = [DataTableTT; TempTable];
     end
-    load(data_dir + latestfile);
-
-    % Obtain session info
-    nTrials = SessionData.nTrials;
-    if (ismember(subject, males))
-        Sex = "M";
-    else
-        Sex = "F";
-    end
-
-    % Compose data table
-    TempTable = table(repmat(subject, nTrials, 1), ... % Rat
-                    repmat(Sex, nTrials, 1), ... % Sex
-                    repmat(string(SessionData.Info.SessionDate), nTrials, 1), ... % Date
-                    repmat(string(SessionData.Info.SessionStartTime_UTC), nTrials, 1), ... % Time
-                    arrayfun(@(x) x.GUI.SoundAttenuation_dB, SessionData.TrialSettings).',...   % Settings
-                    arrayfun(@(x) x.GUI.MaxTrials, SessionData.TrialSettings).',...   % Settings       
-                    arrayfun(@(x) x.GUI.SampleTime, SessionData.TrialSettings).',...   % Settings                    
-                    arrayfun(@(x) x.GUI.RewardAmount, SessionData.TrialSettings).',...          % Settings
-                    arrayfun(@(x) x.GUI.OfferMu, SessionData.TrialSettings).',...           % Settings
-                    arrayfun(@(x) x.GUI.OfferKappa, SessionData.TrialSettings).',...          % Settings
-                    arrayfun(@(x) x.GUI.OfferStep, SessionData.TrialSettings).',...          % Settings
-                    arrayfun(@(x) x.GUI.NOfferMu, SessionData.TrialSettings).',...          % Settings
-                    arrayfun(@(x) x.GUI.NOfferKappa, SessionData.TrialSettings).',...          % Settings
-                    arrayfun(@(x) x.GUI.AltMu, SessionData.TrialSettings).',...          % Settings
-                    arrayfun(@(x) x.GUI.AltKappa, SessionData.TrialSettings).',...          % Settings
-                    arrayfun(@(x) x.GUI.ChoiceLatMax, SessionData.TrialSettings).',...          % Settings
-                    arrayfun(@(x) x.GUI.OfferMin, SessionData.TrialSettings).',...              % Settings
-                    arrayfun(@(x) x.GUI.OfferMax, SessionData.TrialSettings).',...              % Settings
-                    arrayfun(@(x) x.GUI.AltTimeMin, SessionData.TrialSettings).',...         % Settings
-                    arrayfun(@(x) x.GUI.AltTimeMax, SessionData.TrialSettings).',...         % Settings
-                    arrayfun(@(x) x.GUI.NewOfferMin, SessionData.TrialSettings).',...           % Settings
-                    arrayfun(@(x) x.GUI.NewOfferMax, SessionData.TrialSettings).',...           % Settings
-                    arrayfun(@(x) x.GUI.ReviseProb, SessionData.TrialSettings).',...            % Settings
-                    arrayfun(@(x) x.GUI.HzMax, SessionData.TrialSettings).',...                 % Settings
-                    arrayfun(@(x) x.GUI.ThresholdHz, SessionData.TrialSettings).',...           % Settings
-                    [1:nTrials].',... % TrialNo
-                    SessionData.OfferTime.',... % Initial Offer Time
-                    SessionData.NewOffer.',... % Revised Offer Time
-                    SessionData.DoRevise.',... % Whether or not revised offer was presented
-                    SessionData.AltTime.',... % Time at which the initial offer was interrupted with the revised offer
-                    SessionData.InitLat.',... % Time between central port being available and central port entry
-                    SessionData.ChoiceLat.',... % Time between initial offer tone presentation and L/R choice
-                    SessionData.TimeWaited.',... % Time in port for initial offer wait
-                    SessionData.TimeWaitedRev.',... % Time in port for revised offer wait
-                    SessionData.Accepted.',... % Whether initial offer was accepted
-                    SessionData.Rewarded.',... % Whether reward was delivered (i.e., whether rat made it to the end)
-                    SessionData.EarlyWithdrawal.',... % Whether initial offer was accepted
-                    SessionData.ChoiceOmission.',... % Whether reward was delivered (i.e., whether rat made it to the end)
-                    'VariableNames', DataTableVariableNames);
-
-    DataTableTT = [DataTableTT; TempTable];
 end
 
 % Write to file
