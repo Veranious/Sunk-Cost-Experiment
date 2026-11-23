@@ -37,22 +37,21 @@ global BpodSystem
 S = BpodSystem.ProtocolSettings; % load settings chosen in launch manager
 if isempty(fieldnames(S))
     S.GUI.SoundAttenuation_dB = 0;  % loudness, 0 = loudest. Range: 0 to -103 (SD) / -120 (HD)
-    S.GUI.MaxTrials = 2000;
-    S.GUI.SampleTime = 0.400;   % s the nose must stay in the centre port. Increase toward 0.5 over days.
-    S.GUI.RewardAmount = 15;      % ul, converted to valve time via calibration
+    S.GUI.MaxTrials = 3000;
+    S.GUI.SampleTime = 0.400;   % s the nose must stay in the centre port.
+    S.GUI.RewardAmount = 25;      % ul, converted to valve time via calibration
        %% Offer-time distributions: Beta(alpha,beta) cut into one slot per grid value.
     %   Mu    = mean position along the grid, in (0,1). 0.5 = symmetric.
     %           > 0.5 skews toward LONG durations, < 0.5 toward SHORT.
     %   Kappa = concentration, > 0.  Kappa = 2 with Mu = 0.5 is EXACTLY uniform over slots.
     %           Kappa < 2 -> U-shaped (mass at the extremes)
     %           Kappa > 2 -> bell (mass in the middle). Kappa = 10 is already tight.
-    S.GUI.OfferMu     = 0.5;   S.GUI.OfferKappa   = 0.2;   % original offer O
+    S.GUI.OfferMu     = 0.5;   S.GUI.OfferKappa   = 2;   % original offer O
     S.GUI.NOfferMu    = 0.5;   S.GUI.NOfferKappa  = 2;   % new offer R
     S.GUI.AltMu    = 0.5;   S.GUI.AltKappa  = 2;   % revised Alternative timing S
-    %
+    
     S.GUI.ChoiceLatMax = 5;     % Max time allotted for choice
-    %
-    % All times are WHOLE SECONDS (one grid slot per second at OfferStep = 1).
+
     S.GUI.OfferMin      = 1;     % s. Note: a 1 s offer can never be revised (no whole second before reward)
     S.GUI.OfferMax      = 30;    % s
     S.GUI.OfferStep     = 1;     % s between offered durations, applies to O and R (1 -> 30 slots) 
