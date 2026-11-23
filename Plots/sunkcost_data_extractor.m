@@ -2,7 +2,7 @@
 base_dir = "C:/Users/Alex/Downloads/bpod_test/Bpod Local/Data/";
 subjects = ["AY01", "AY02", "AY03", "AY04"];
 males = [""];
-OutputFilepath = "DataTable_20261116.csv";
+OutputFilepath = "DataTable_20261120.csv";
 
 % Create table with variable prefixes:
 %   - SUB for "Subject Info" (Subject and Session details)
@@ -14,9 +14,9 @@ DataTableVariableNames = ["SUB_Rat", "SUB_Sex", "SUB_Date", "SUB_StartTime", ...
             "SET_OfferKappa", "SET_NOfferMu", "SET_NOfferKappa", "SET_AltMu", "SET_AltKappa", "SET_ChoiceLatMax", ...
             "SET_OfferMin", "SET_OfferMax", "SET_OfferStep", "SET_AltTimeMin", "SET_AltTimeMax", ...
             "SET_NewOfferMin", "SET_NewOfferMax", "SET_ReviseProb", "SET_HzMax", "SET_ThresholdHz", ...
-            "DTA_TrialNum", "DTA_Offer", "DTA_NewOffer", "DTA_DoRevise", "DTA_AltTime", ...
+            "DTA_TrialStartTimestamp", "DTA_TrialNum", "DTA_Offer", "DTA_NewOffer", "DTA_DoRevise", "DTA_AltTime", ...
             "DTA_InitLat", "DTA_ChoiceLat", "DTA_TimeWaited", "DTA_TimeWaitedRev", ...
-            "DTA_Accepted", "DTA_Rewarded", "DTA_EarlyWithdrawal", "DTA_ChoiceOmission"];
+            "DTA_Accepted", "DTA_Rewarded", "DTA_EarlyWithdrawal", "DTA_ChoiceOmission", "DTA_RewardRate"];
 
 for subject = subjects
     data_dir = base_dir + subject + "/RunSunkCost_NoHiFi/Session Data/";
@@ -60,6 +60,7 @@ for subject = subjects
                         arrayfun(@(x) x.GUI.ReviseProb, SessionData.TrialSettings).',...            % Settings
                         arrayfun(@(x) x.GUI.HzMax, SessionData.TrialSettings).',...                 % Settings
                         arrayfun(@(x) x.GUI.ThresholdHz, SessionData.TrialSettings).',...           % Settings
+                        SessionData.TrialStartTimestamp.',... % Trial start timestamp
                         [1:nTrials].',... % TrialNo
                         SessionData.OfferTime.',... % Initial Offer Time
                         SessionData.NewOffer.',... % Revised Offer Time
@@ -73,6 +74,7 @@ for subject = subjects
                         SessionData.Rewarded.',... % Whether reward was delivered (i.e., whether rat made it to the end)
                         SessionData.EarlyWithdrawal.',... % Whether initial offer was accepted
                         SessionData.ChoiceOmission.',... % Whether reward was delivered (i.e., whether rat made it to the end)
+                        cumsum(SessionData.Rewarded.')./SessionData.TrialStartTimestamp.',...
                         'VariableNames', DataTableVariableNames);
     
         DataTableTT = [DataTableTT; TempTable];
