@@ -38,7 +38,7 @@ S = BpodSystem.ProtocolSettings; % load settings chosen in launch manager
 if isempty(fieldnames(S))
     S.GUI.SoundAttenuation_dB = 0;  % loudness, 0 = loudest. Range: 0 to -103 (SD) / -120 (HD)
     S.GUI.MaxTrials = 3000;
-    S.GUI.SampleTime = 0.400;   % s the nose must stay in the centre port.
+    S.GUI.SampleTime = 0.500;   % s the nose must stay in the centre port.
     S.GUI.RewardAmount = 25;      % ul, converted to valve time via calibration
        %% Offer-time distributions: Beta(alpha,beta) cut into one slot per grid value.
     %   Mu    = mean position along the grid, in (0,1). 0.5 = symmetric.
@@ -294,7 +294,7 @@ for trialNum = 1:S.GUI.MaxTrials
     sma = AddState(sma,'Name','EarlyWithdrawal',...
         'Timer',10,...
         'StateChangeConditions',{'Tup','ITI'},...
-        'OutputActions',{'HiFi1',['P' 7]}}); %%omission white noise mimics 'OfferOmission' state
+        'OutputActions',{'HiFi1',['P' 7]}); %%omission white noise mimics 'OfferOmission' state
         
     %% OMISSION with flashing light
     sma = AddState(sma,'Name','OfferOmission',...
